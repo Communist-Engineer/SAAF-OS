@@ -17,7 +17,7 @@ We follow LangGraph’s application-structure guide and cookiecutter Python pack
 
 ```bash
 # Clone and cd
-git clone https://github.com/your-org/saaf.git && cd saaf
+git clone https://github.com/your-org/saaf.git && cd SAAF-OS
 
 # Create and activate env
 python -m venv .venv
