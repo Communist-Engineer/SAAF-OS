@@ -1,0 +1,69 @@
+
+# Governance Rules for SAAF‑OS (governance_rules.toml)
+
+# This file defines thresholds, policy scopes, voting mechanisms,
+# and override protections for polycentric governance in SAAF‑OS.
+
+[global]
+quorum_required = true
+quorum_ratio = 0.6                # 60% of eligible voters must participate
+supermajority_threshold = 0.67   # For policy override or RSI patch approval
+veto_power_enabled = true
+value_lock_enforced = true
+
+[governance_gate]
+enabled = true
+impact_scope_threshold = 0.5     # RSI patches affecting >50% of value vector range require a vote
+review_window_days = 7
+auto_reject_unvoted = true
+
+[patch_voting]
+method = "quadratic"             # Options: "majority", "quadratic", "liquid"
+weight_by_class_position = true
+voting_timeout_sec = 3600
+allow_abstain = true
+
+[policy_categories]
+[[policy_categories.core]]
+id = "001"
+name = "Safety and Alignment"
+scope = "critical"
+requires_supermajority = true
+
+[[policy_categories.core]]
+id = "002"
+name = "Planner Behavior"
+scope = "major"
+requires_supermajority = false
+
+[[policy_categories.core]]
+id = "003"
+name = "Value Vector Weights"
+scope = "critical"
+requires_supermajority = true
+
+[[policy_categories.core]]
+id = "004"
+name = "Memory Retention Policy"
+scope = "minor"
+requires_supermajority = false
+
+[vote_logging]
+enabled = true
+log_retention_days = 365
+log_anonymized = false
+audit_hashing = true
+
+[thresholds]
+max_patch_retries = 3
+max_governance_overrides = 2      # Within 30 days
+
+[rules.value_lock]
+lock_dimensions = ["commons_share", "alienation"]
+override_requires_manual_quorum = true
+auto_veto_if_negative_delta = true
+
+[alerts]
+on_veto = "broadcast: governance.veto"
+on_patch_approved = "log: memory.patch_history"
+on_quorum_failure = "raise: governance.alert.quorum_missed"

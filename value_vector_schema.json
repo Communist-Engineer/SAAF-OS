@@ -1,0 +1,33 @@
+
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Value Vector",
+  "description": "Schema for the SAAF‑OS 4D value vector used in policy scoring, contradiction modeling, and governance.",
+  "type": "object",
+  "properties": {
+    "labor_time": {
+      "type": "number",
+      "description": "Total agent labor-time expended in task execution (normalized per agent-hour)",
+      "minimum": 0
+    },
+    "surplus_value": {
+      "type": "number",
+      "description": "Difference between value created and value retained by the agent/collective",
+      "minimum": -1.0,
+      "maximum": 1.0
+    },
+    "commons_share": {
+      "type": "number",
+      "description": "Portion of outputs that are communally accessible",
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "alienation": {
+      "type": "number",
+      "description": "Degree of deviation between planned/intended labor and actual performed labor (1.0 = maximal alienation)",
+      "minimum": 0.0,
+      "maximum": 1.0
+    }
+  },
+  "required": ["labor_time", "surplus_value", "commons_share", "alienation"]
+}

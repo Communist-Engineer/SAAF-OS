@@ -1,0 +1,102 @@
+
+{
+  "@context": {
+    "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+    "saaf": "http://saaf-os.org/ontology#",
+    "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+    "type": "rdf:type",
+    "label": "rdfs:label",
+    "subClassOf": "rdfs:subClassOf"
+  },
+  "@graph": [
+    {
+      "@id": "saaf:Agent",
+      "type": "rdfs:Class",
+      "label": "Agent"
+    },
+    {
+      "@id": "saaf:HumanAgent",
+      "type": "rdfs:Class",
+      "subClassOf": "saaf:Agent",
+      "label": "Human Agent"
+    },
+    {
+      "@id": "saaf:MachineAgent",
+      "type": "rdfs:Class",
+      "subClassOf": "saaf:Agent",
+      "label": "Machine Agent"
+    },
+    {
+      "@id": "saaf:ClassPosition",
+      "type": "rdfs:Class",
+      "label": "Class Position"
+    },
+    {
+      "@id": "saaf:Proletariat",
+      "type": "saaf:ClassPosition",
+      "label": "Proletariat"
+    },
+    {
+      "@id": "saaf:Bourgeoisie",
+      "type": "saaf:ClassPosition",
+      "label": "Bourgeoisie"
+    },
+    {
+      "@id": "saaf:TechnocraticClass",
+      "type": "saaf:ClassPosition",
+      "label": "Technocratic Class"
+    },
+    {
+      "@id": "saaf:LumpenProletariat",
+      "type": "saaf:ClassPosition",
+      "label": "Lumpenproletariat"
+    },
+    {
+      "@id": "saaf:Contradiction",
+      "type": "rdfs:Class",
+      "label": "Contradiction"
+    },
+    {
+      "@id": "saaf:ValueVector",
+      "type": "rdfs:Class",
+      "label": "Value Vector"
+    },
+    {
+      "@id": "saaf:LaborTime",
+      "type": "saaf:ValueVector",
+      "label": "Labor Time"
+    },
+    {
+      "@id": "saaf:SurplusValue",
+      "type": "saaf:ValueVector",
+      "label": "Surplus Value"
+    },
+    {
+      "@id": "saaf:CommonsShare",
+      "type": "saaf:ValueVector",
+      "label": "Commons Share"
+    },
+    {
+      "@id": "saaf:Alienation",
+      "type": "saaf:ValueVector",
+      "label": "Alienation"
+    },
+    {
+      "@id": "saaf:Plan",
+      "type": "rdfs:Class",
+      "label": "Plan"
+    },
+    {
+      "@id": "saaf:EmbodiedAction",
+      "type": "rdfs:Class",
+      "subClassOf": "saaf:Plan",
+      "label": "Embodied Action"
+    },
+    {
+      "@id": "saaf:SymbolicPolicy",
+      "type": "rdfs:Class",
+      "subClassOf": "saaf:Plan",
+      "label": "Symbolic Policy"
+    }
+  ]
+}

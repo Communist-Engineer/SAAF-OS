@@ -1,0 +1,52 @@
+
+{
+  "agent_id": "agent-001",
+  "class_position": "Proletariat",
+  "initial_value_vector": {
+    "labor_time": 0.0,
+    "surplus_value": 0.0,
+    "commons_share": 1.0,
+    "alienation": 0.0
+  },
+  "governance_participation": true,
+  "modules_enabled": [
+    "ULSEncoder",
+    "ContradictionEngine",
+    "RLPlanner",
+    "MemoryManager"
+  ],
+  "memory": {
+    "episodic_window": 100,
+    "semantic_depth": 3
+  },
+  "rl": {
+    "policy_type": "hybrid", 
+    "mcts_rollout_depth": 5,
+    "reward_weights": {
+      "labor_time": -0.4,
+      "surplus_value": -0.3,
+      "commons_share": 0.5,
+      "alienation": -0.6
+    }
+  },
+  "governance": {
+    "voting_weight": 1.0,
+    "can_propose_policy": true
+  },
+  "communication": {
+    "subscribe_topics": [
+      "agent.tick.request",
+      "contradiction.plan.suggested",
+      "fwm.simulation.result"
+    ],
+    "publish_topics": [
+      "agent.state.update",
+      "agent.plan.complete",
+      "memory.episodic.store"
+    ]
+  },
+  "health_monitoring": {
+    "heartbeat_interval_sec": 30,
+    "max_latency_warning_ms": 100
+  }
+}
