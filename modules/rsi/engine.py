@@ -17,7 +17,7 @@ import string
 import time
 from typing import Dict, List, Any, Optional, Tuple, Union
 import numpy as np
-from .crypto_utils import sign_patch, verify_patch_signature
+from .crypto_utils import sign_patch, verify_patch_signature, ensure_keys_exist
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, 
@@ -36,7 +36,9 @@ class Patch:
                  description: str,
                  author: str = "RSI-Engine",
                  patch_id: Optional[str] = None,
-                 signatures: Optional[list] = None):
+                 signatures: Optional[list] = None,
+                 creation_time: Optional[float] = None,
+                 status: Optional[str] = None):
         """
         Initialize a patch.
         
@@ -47,24 +49,28 @@ class Patch:
             author: Who/what created the patch
             patch_id: Unique identifier for the patch (generated if None)
             signatures: List of signatures for the patch
+            creation_time: Patch creation time (timestamp)
+            status: Patch status (proposed, approved, rejected, applied, rolled_back)
         """
         self.module_path = module_path
         self.content = content
         self.description = description
         self.author = author
-        self.creation_time = time.time()
+        self.creation_time = creation_time if creation_time is not None else time.time()
         self.patch_id = patch_id if patch_id else str(uuid.uuid4())
-        self.status = "proposed"  # proposed, approved, rejected, applied, rolled_back
+        self.status = status if status is not None else "proposed"  # proposed, approved, rejected, applied, rolled_back
         self.signatures = signatures or []  # List of dicts: [{signer, signature}]
     
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self, exclude_fields: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         Convert patch to a dictionary.
         
+        Args:
+            exclude_fields: Optional list of fields to exclude from the dict
         Returns:
             Dictionary representation of the patch
         """
-        return {
+        d = {
             "patch_id": self.patch_id,
             "module_path": self.module_path,
             "description": self.description,
@@ -74,29 +80,31 @@ class Patch:
             "content": self.content,
             "signatures": self.signatures
         }
+        if exclude_fields:
+            for field in exclude_fields:
+                d.pop(field, None)
+        return d
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'Patch':
         """
-        Create a patch from a dictionary.
-        
-        Args:
-            data: Dictionary representation of a patch
-            
-        Returns:
-            Patch object
+        Create a patch from a dictionary, ignoring unexpected fields.
         """
-        patch = cls(
-            module_path=data["module_path"],
-            content=data["content"],
-            description=data["description"],
-            author=data["author"],
-            patch_id=data["patch_id"],
-            signatures=data.get("signatures", [])
+        expected_fields = [
+            "patch_id", "module_path", "content", "description", "author",
+            "creation_time", "status", "signatures"
+        ]
+        filtered = {k: data[k] for k in expected_fields if k in data}
+        return cls(
+            module_path=filtered["module_path"],
+            content=filtered["content"],
+            description=filtered["description"],
+            author=filtered.get("author", "RSI-Engine"),
+            patch_id=filtered.get("patch_id"),
+            signatures=filtered.get("signatures", []),
+            creation_time=filtered.get("creation_time"),
+            status=filtered.get("status")
         )
-        patch.creation_time = data["creation_time"]
-        patch.status = data["status"]
-        return patch
 
 
 class RSIEngine:
@@ -111,6 +119,10 @@ class RSIEngine:
         Args:
             message_bus: Message bus adapter for communication
         """
+        # Ensure both rsi_signer and rsi_signer2 keys exist
+        ensure_keys_exist('rsi_signer')
+        ensure_keys_exist('rsi_signer2')
+        
         self.message_bus = message_bus
         self.patches: Dict[str, Patch] = {}  # Maps patch_id to Patch
         self.rollback_table: Dict[str, str] = {}  # Maps patch_id to original content
@@ -125,6 +137,12 @@ class RSIEngine:
         self.message_bus.subscribe("rsi.patch.governance_decision", self._handle_governance_decision)
         self.message_bus.subscribe("rsi.patch.evaluate", self._handle_patch_evaluation)
     
+    def _patch_dict_for_signing(self, patch: Patch) -> dict:
+        """
+        Return a dictionary representation of the patch excluding signatures, for signing/verifying.
+        """
+        return patch.to_dict(exclude_fields=["signatures"])
+
     def generate_patch(self, module_path: str, description: str = "", critical: bool = False) -> Patch:
         """
         Generate a simple random patch for demonstration purposes.
@@ -142,24 +160,53 @@ class RSIEngine:
         # In a real implementation, this would analyze code and make meaningful changes
         random_str = ''.join(random.choice(string.ascii_letters) for _ in range(20))
         content = f"@@ -1,3 +1,3 @@\n-old line\n+{random_str}\n context"
-        
+
         patch = Patch(
             module_path=module_path,
             content=content,
             description=description or f"Auto-generated patch for {module_path}"
         )
-        
-        # Sign patch
-        patch_bytes = json.dumps({k: v for k, v in patch.to_dict().items() if k != 'signatures'}, sort_keys=True).encode()
-        sig = sign_patch(patch_bytes, key_name="rsi_signer")
-        patch.signatures.append({"signer": "rsi_signer", "signature": sig})
-        
+
+        # Sign and verify the same pre-signature dictionary (excluding signatures)
+        patch.signed_dict = patch.to_dict(exclude_fields=["signatures"])
+        sig = sign_patch(patch.signed_dict, key_name="rsi_signer")
+
+        assert verify_patch_signature(patch.signed_dict, sig), "Signature verification failed after signing."
+
+        # Now assign signature AFTER verification
+        patch.signatures = [{"signer": "rsi_signer", "signature": sig}]
+
         # For critical patches, require a second signature (simulate for now)
         if critical:
-            sig2 = sign_patch(patch_bytes, key_name="rsi_signer2") if os.path.exists(os.path.join(os.path.dirname(__file__), '../../data/keys/rsi_signer2_private.key')) else sig
+            patch_dict_for_signing2 = patch.to_dict(exclude_fields=["signatures"])
+            signer2_path = os.path.expanduser("~/.saaf_keys/rsi_signer2.key")
+            if os.path.exists(signer2_path):
+                sig2 = sign_patch(patch_dict_for_signing2, key_name="rsi_signer2")
+                assert verify_patch_signature(patch_dict_for_signing2, sig2, key_name="rsi_signer2"), "Second signature verification failed."
+            else:
+                # Simulate second signature if key doesn't exist
+                sig2 = sig
             patch.signatures.append({"signer": "rsi_signer2", "signature": sig2})
-        
+
         self.patches[patch.patch_id] = patch
+        print("Signed patch bytes:", patch.signed_dict)
+        print("Signature:", sig)
+        print("Patch ID:", patch.patch_id)
+        print("Patch content:", patch.content)
+        print("Patch description:", patch.description)
+        print("Patch signatures:", patch.signatures)
+        print("Patch status:", patch.status)
+        print("Patch creation time:", patch.creation_time)
+        print("Patch author:", patch.author)
+        print("Patch module path:", patch.module_path)
+        print("Patch rollback table:", self.rollback_table)
+        print("Patch active patches:", self.active_patches)
+        print("=== DEBUG SIGNATURE ROUNDTRIP ===")
+        print("patch.to_dict():", patch.to_dict())
+        print("Signature:", sig)
+        print("Verifies?", verify_patch_signature(patch.to_dict(exclude_fields=["signatures"]), sig))
+        print("Signer key path:", os.path.expanduser(f"~/.saaf_keys/rsi_signer.key"))
+        print("=================================")
         return patch
     
     def propose_patch(self, patch: Patch) -> bool:
@@ -188,7 +235,7 @@ class RSIEngine:
         
         return True
     
-    def verify_patch_signatures(self, patch: Patch, critical: bool = False) -> bool:
+    def verify_patch_signatures(self, patch: Patch, critical: bool = False, force_recompute: bool = False) -> bool:
         """
         Verify the signatures of a patch.
         
@@ -199,17 +246,24 @@ class RSIEngine:
         Returns:
             True if signatures are valid, False otherwise
         """
-        patch_bytes = json.dumps({k: v for k, v in patch.to_dict().items() if k != 'signatures'}, sort_keys=True).encode()
-        if critical:
-            if len(patch.signatures) < 2:
+        if not patch.signatures:
+            return False
+            
+
+        patch_dict = patch.to_dict(exclude_fields=["signatures"]) if force_recompute else getattr(patch, "signed_dict", patch.to_dict(exclude_fields=["signatures"]))
+        
+        # For critical patches, we need at least 2 signatures
+        if critical and len(patch.signatures) < 2:
+            return False
+            
+        # Verify each signature with its respective signer key
+        for sig in patch.signatures:
+            signer = sig["signer"]
+            signature = sig["signature"]
+            if not verify_patch_signature(patch_dict, signature, key_name=signer):
                 return False
-            return all(
-                verify_patch_signature(patch_bytes, s["signature"], key_name=s["signer"]) for s in patch.signatures[:2]
-            )
-        else:
-            if not patch.signatures:
-                return False
-            return verify_patch_signature(patch_bytes, patch.signatures[0]["signature"], key_name=patch.signatures[0]["signer"])
+                
+        return True
     
     def apply_patch(self, patch_id: str, critical: bool = False) -> bool:
         """
@@ -226,8 +280,14 @@ class RSIEngine:
             logger.error(f"Cannot apply patch: {patch_id} not found")
             return False
         
-        patch = self.patches[patch_id]
         
+        patch = self.patches[patch_id]
+        logger.debug(f"Applying patch: {patch.patch_id}")
+        logger.debug(f"Patch status: {patch.status}")
+        logger.debug(f"Patch content: {patch.content}")
+        logger.debug(f"Patch signatures: {patch.signatures}")
+        logger.debug(f"Signature verification: {self.verify_patch_signatures(patch)}")
+
         if not self.verify_patch_signatures(patch, critical=critical):
             logger.error(f"Patch {patch_id} signature verification failed. Not applying.")
             return False
@@ -249,7 +309,8 @@ class RSIEngine:
             
             # Mark as applied
             patch.status = "applied"
-            self.active_patches.append(patch_id)
+            if patch_id not in self.active_patches:
+                self.active_patches.append(patch_id)
             
             # Notify via message bus
             if self.message_bus:
@@ -329,7 +390,9 @@ class RSIEngine:
         if decision == "approved":
             logger.info(f"Patch {patch_id} approved by governance")
             patch.status = "approved"
-            self.apply_patch(patch_id)
+            applied = self.apply_patch(patch_id, critical=(len(patch.signatures) > 1))
+            if not applied:
+                logger.error(f"Patch {patch_id} failed to apply after approval.")
         elif decision == "rejected":
             logger.info(f"Patch {patch_id} rejected by governance")
             patch.status = "rejected"

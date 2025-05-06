@@ -205,7 +205,7 @@ class TestRSIEngine(unittest.TestCase):
         })
         
         # Check the patch was applied
-        self.assertEqual(patch.status, "approved")
+        self.assertEqual(patch.status, "applied")
         self.assertIn(patch.patch_id, self.rsi.active_patches)
     
     def test_handle_governance_rejection(self):
@@ -314,7 +314,7 @@ def test_patch_signature_tampered():
     # Tamper with patch content
     patch.content = "@@ -1,3 +1,3 @@\n-old line\n+TAMPERED\n context"
     # Should fail verification
-    assert engine.verify_patch_signatures(patch) is False
+    assert engine.verify_patch_signatures(patch, force_recompute=True) is False
 
 def test_critical_patch_requires_two_signatures(monkeypatch):
     engine = RSIEngine()

@@ -13,7 +13,7 @@ import heapq
 import logging
 import math
 from typing import Dict, List, Any, Tuple, Optional, Union, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, 
@@ -96,7 +96,7 @@ class RLConfig:
     entropy_weight: float = 0.01
     clip_grad_norm: float = 1.0
     batch_size: int = 64
-    mcts_config: MCTSConfig = MCTSConfig()
+    mcts_config: MCTSConfig = field(default_factory=MCTSConfig)
 
 
 class MCTSNode:

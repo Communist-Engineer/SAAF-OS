@@ -2,6 +2,7 @@
 Ed25519 key management and signature utilities for RSI patches.
 """
 import os
+import json
 from nacl.signing import SigningKey, VerifyKey
 from nacl.encoding import HexEncoder
 from nacl.exceptions import BadSignatureError
@@ -44,12 +45,24 @@ def load_verify_key(key_name: str = 'rsi_signer') -> VerifyKey:
     with open(pub_path, 'rb') as f:
         return VerifyKey(f.read())
 
-def sign_patch(patch_bytes: bytes, key_name: str = 'rsi_signer') -> str:
+def sign_patch(patch_data: dict, key_name: str = 'rsi_signer') -> str:
+    """
+    Sign the canonical JSON serialization of patch_data (sorted keys, utf-8 encoded).
+    """
+    if not isinstance(patch_data, dict):
+        raise TypeError("patch_data must be a dictionary")
+    patch_bytes = json.dumps(patch_data, sort_keys=True).encode("utf-8")
     sk = load_signing_key(key_name)
     sig = sk.sign(patch_bytes).signature
     return sig.hex()
 
-def verify_patch_signature(patch_bytes: bytes, signature_hex: str, key_name: str = 'rsi_signer') -> bool:
+def verify_patch_signature(patch_data: dict, signature_hex: str, key_name: str = 'rsi_signer') -> bool:
+    """
+    Verify the signature against the canonical JSON serialization of patch_data (sorted keys, utf-8 encoded).
+    """
+    if not isinstance(patch_data, dict):
+        raise TypeError("patch_data must be a dictionary")
+    patch_bytes = json.dumps(patch_data, sort_keys=True).encode("utf-8")
     vk = load_verify_key(key_name)
     try:
         vk.verify(patch_bytes, bytes.fromhex(signature_hex))
