@@ -455,5 +455,162 @@ class TestForwardWorldModel(unittest.TestCase):
         self.assertAlmostEqual(rmse, expected_rmse)
 
 
+"""
+Test cases for the Forward World Model (FWM) module.
+"""
+
+import sys
+import os
+import pytest
+import numpy as np
+
+# Add the repository root to the path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+# Import the FWM module
+from modules.fwm import simulate_plan, batch_simulate_plans, compare_plans
+
+def test_simulate_plan_dimensions():
+    """Test that simulate_plan preserves the dimensions of the input vector."""
+    # Create a random 16-dimensional unit vector
+    z_t = np.random.randn(16)
+    z_t = z_t / np.linalg.norm(z_t)
+    
+    # Create a simple plan
+    plan = {
+        'steps': [
+            {'id': 'step_1', 'agent_id': 'AgriBot1', 'energy_required': 0.2},
+            {'id': 'step_2', 'agent_id': 'AgriBot2', 'energy_required': 0.3}
+        ],
+        'total_energy': 0.5
+    }
+    
+    # Simulate the plan
+    z_next, contradiction_score = simulate_plan(z_t, plan)
+    
+    # Check that dimensions are preserved
+    assert z_next.shape == z_t.shape
+    
+    # Check that the vector is still normalized
+    assert np.isclose(np.linalg.norm(z_next), 1.0)
+    
+    # Check that contradiction score is in range [0, 1]
+    assert 0.0 <= contradiction_score <= 1.0
+
+def test_simulate_plan_predictability():
+    """Test that simulate_plan changes the latent vector in a predictable way."""
+    # Create a controlled input vector
+    z_t = np.zeros(16)
+    z_t[0] = 1.0  # Set first dimension to 1.0 (normalized vector)
+    
+    # Create two plans with different energy requirements
+    low_energy_plan = {
+        'steps': [{'id': 'step_1', 'agent_id': 'AgriBot1', 'energy_required': 0.1}],
+        'total_energy': 0.1
+    }
+    
+    high_energy_plan = {
+        'steps': [
+            {'id': 'step_1', 'agent_id': 'AgriBot1', 'energy_required': 0.2},
+            {'id': 'step_2', 'agent_id': 'AgriBot2', 'energy_required': 0.3}
+        ],
+        'total_energy': 0.5
+    }
+    
+    # Simulate both plans
+    z_next_low, contradiction_low = simulate_plan(z_t, low_energy_plan)
+    z_next_high, contradiction_high = simulate_plan(z_t, high_energy_plan)
+    
+    # Higher energy plan should result in a lower value in dimension 0
+    # (indicating more contradiction)
+    assert z_next_low[0] > z_next_high[0]
+    
+    # Higher energy plan should have a higher contradiction score
+    assert contradiction_high > contradiction_low
+
+def test_contradiction_score_energy_correlation():
+    """Test that contradiction score correlates with plan energy usage."""
+    # Create a controlled input vector
+    z_t = np.zeros(16)
+    z_t[0] = 1.0  # Set first dimension to 1.0 (normalized vector)
+    
+    # Generate plans with increasing energy requirements
+    contradiction_scores = []
+    energy_levels = [0.1, 0.3, 0.5, 0.7, 0.9]
+    
+    for energy in energy_levels:
+        plan = {
+            'steps': [{'id': 'step_1', 'agent_id': 'AgriBot1', 'energy_required': energy}],
+            'total_energy': energy
+        }
+        
+        _, contradiction_score = simulate_plan(z_t, plan)
+        contradiction_scores.append(contradiction_score)
+    
+    # Verify that contradiction scores increase with energy
+    for i in range(1, len(contradiction_scores)):
+        assert contradiction_scores[i] > contradiction_scores[i-1]
+
+def test_batch_simulate_plans():
+    """Test batch simulation of multiple plans."""
+    z_t = np.random.randn(16)
+    z_t = z_t / np.linalg.norm(z_t)
+    
+    plans = [
+        {
+            'id': 'plan1',
+            'steps': [{'id': 'step_1', 'agent_id': 'AgriBot1', 'energy_required': 0.2}],
+            'total_energy': 0.2
+        },
+        {
+            'id': 'plan2',
+            'steps': [
+                {'id': 'step_1', 'agent_id': 'AgriBot1', 'energy_required': 0.3},
+                {'id': 'step_2', 'agent_id': 'AgriBot2', 'energy_required': 0.2}
+            ],
+            'total_energy': 0.5
+        }
+    ]
+    
+    results = batch_simulate_plans(z_t, plans)
+    
+    # Check that we get the expected number of results
+    assert len(results) == len(plans)
+    
+    # Check that each result has the correct format
+    for z_next, score in results:
+        assert z_next.shape == z_t.shape
+        assert np.isclose(np.linalg.norm(z_next), 1.0)
+        assert 0.0 <= score <= 1.0
+
+def test_compare_plans():
+    """Test plan comparison functionality."""
+    z_t = np.zeros(16)
+    z_t[0] = 1.0  # Set first dimension to 1.0 (normalized vector)
+    
+    plans = [
+        {
+            'id': 'efficient_plan',
+            'steps': [{'id': 'step_1', 'agent_id': 'AgriBot1', 'energy_required': 0.1}],
+            'total_energy': 0.1
+        },
+        {
+            'id': 'inefficient_plan',
+            'steps': [
+                {'id': 'step_1', 'agent_id': 'AgriBot1', 'energy_required': 0.3},
+                {'id': 'step_2', 'agent_id': 'AgriBot2', 'energy_required': 0.4}
+            ],
+            'total_energy': 0.7
+        }
+    ]
+    
+    comparison = compare_plans(z_t, plans)
+    
+    # Check that we got the expected best plan (the efficient one)
+    assert comparison['best_plan_id'] == 'efficient_plan'
+    
+    # Check that all plans are included in the results
+    assert len(comparison['plans']) == len(plans)
+
 if __name__ == "__main__":
     unittest.main()

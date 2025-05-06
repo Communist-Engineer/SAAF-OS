@@ -336,23 +336,42 @@ class ForwardWorldModel:
     Main class implementing the Forward World Model as specified in forward_world_model.md.
     """
     
-    def __init__(self, use_neural_model: bool = False, latent_dim: int = 256):
+    def __init__(self, use_neural_model: bool = False, latent_dim: int = 256, state_dim=None, action_dim=None, config=None):
         """
         Initialize the Forward World Model.
         
         Args:
             use_neural_model: Whether to use neural network dynamics model
             latent_dim: Dimension of the latent state
+            state_dim: Dimension of the state (for backward compatibility)
+            action_dim: Dimension of the action (for backward compatibility)
+            config: Configuration for the model (for backward compatibility)
         """
         self.latent_dim = latent_dim
         self.use_neural_model = use_neural_model
         
-        if use_neural_model:
-            # Initialize ensemble of dynamics models
-            self.dynamics_models = [FWMDynamicsModel(latent_dim) for _ in range(5)]
+        # For backward compatibility with existing tests
+        self.state_dim = state_dim
+        self.action_dim = action_dim
+        self.config = config
+        
+        if state_dim is not None and action_dim is not None:
+            # Legacy initialization path
+            from modules.world_model.fwm import FWMConfig
+            self.config = config or FWMConfig()
+            self.network = torch.nn.Sequential(
+                torch.nn.Linear(state_dim + action_dim, self.config.hidden_dim),
+                torch.nn.ReLU(),
+                torch.nn.Linear(self.config.hidden_dim, state_dim)
+            )
         else:
-            # Use dummy model for testing
-            self.dynamics_models = [DummyFWMDynamicsModel(latent_dim)]
+            # New initialization path
+            if use_neural_model:
+                # Initialize ensemble of dynamics models
+                self.dynamics_models = [FWMDynamicsModel(latent_dim) for _ in range(5)]
+            else:
+                # Use dummy model for testing
+                self.dynamics_models = [DummyFWMDynamicsModel(latent_dim)]
     
     def _encode_action(self, action: Action) -> np.ndarray:
         """
@@ -581,18 +600,12 @@ class ForwardWorldModel:
             scores[f"path_to_{node_id}"] = utility
         
         return scores
-
-    def __init__(self, state_dim, action_dim, config=None):
-        self.state_dim = state_dim
-        self.action_dim = action_dim
-        self.config = config or FWMConfig()
-        self.network = torch.nn.Sequential(
-            torch.nn.Linear(state_dim + action_dim, self.config.hidden_dim),
-            torch.nn.ReLU(),
-            torch.nn.Linear(self.config.hidden_dim, state_dim)
-        )
+    
+    # Legacy methods for backward compatibility
     def save(self, filename):
-        torch.save({'state_dict': self.network.state_dict()}, filename)
+        if hasattr(self, 'network'):
+            torch.save({'state_dict': self.network.state_dict()}, filename)
+    
     def load(self, path):
         # Handle empty or incomplete state_dicts gracefully for test scenarios
         try:
@@ -601,12 +614,20 @@ class ForwardWorldModel:
                 self.model.load_state_dict(state_dict, strict=False)
         except Exception:
             pass  # For test mocks, ignore errors
+    
     def predict_next_state(self, state, action):
-        x = np.concatenate([state.vector, action.vector])
-        x_tensor = torch.tensor(x, dtype=torch.float32)
-        with torch.no_grad():
-            next_vec = self.network(x_tensor).numpy()
-        return State(next_vec)
+        if hasattr(self, 'network'):
+            x = np.concatenate([state.vector, action.vector])
+            x_tensor = torch.tensor(x, dtype=torch.float32)
+            with torch.no_grad():
+                next_vec = self.network(x_tensor).numpy()
+            return State(next_vec)
+        else:
+            # Fallback for new implementation
+            dynamics_model = self.dynamics_models[0]
+            z_next, _, _ = dynamics_model.predict_next_state(state.z_t, action)
+            return State(z_next)
+    
     def simulate_trajectory(self, initial_state, actions, reward_function):
         states = [initial_state]
         rewards = []
@@ -616,17 +637,23 @@ class ForwardWorldModel:
             states.append(next_state)
             rewards.append(reward)
         return Trajectory(states, actions, rewards)
+    
     def train(self, X, y, num_iterations=1000):
-        for _ in range(num_iterations):
-            self._train_step(X, y)
+        if hasattr(self, 'network'):
+            for _ in range(num_iterations):
+                self._train_step(X, y)
+        
     def _train_step(self, X, y):
         return 0.1
+    
     def evaluate(self, test_trajectories):
         # Dummy MSE calculation
         return float(0.0)
+    
     @classmethod
     def from_config(cls, state_dim, action_dim, config):
-        return cls(state_dim, action_dim, config)
+        return cls(state_dim=state_dim, action_dim=action_dim, config=config)
+    
     def prediction_error_metrics(self, actual, predicted):
         diff = actual.vector - predicted.vector
         mae = np.mean(np.abs(diff))
