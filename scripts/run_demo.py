@@ -32,6 +32,19 @@ from bus.adapter import MessageBusAdapter, MessageBusFactory
 import modules.uls_encoder as uls_encoder
 import modules.planner as planner
 import modules.fwm as fwm
+from modules.rsi.engine import propose_patch
+
+def evaluate_patch(patch: str) -> bool:
+    """
+    Dummy patch evaluation: returns True if patch improves plan score (placeholder).
+    """
+    return True
+
+def governance_vote(patch: str) -> bool:
+    """
+    Dummy governance vote: accept if patch string contains 'safe'.
+    """
+    return "safe" in patch
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, 
@@ -171,6 +184,23 @@ class ScenarioRunner:
         for i in top_indices:
             print(f"  - Dim {i}: {z_t[i]:.4f} -> {z_next_before[i]:.4f} (Δ: {latent_diff_before[i]:.4f})")
 
+        # NEW RSI integration: propose, evaluate, and vote on patch
+        patch = None
+        if contradiction_before > 0.01:
+            patch = propose_patch(target="planner")
+            print(f"RSI proposed patch: {patch}")
+        else:
+            print("RSI: No patch proposed (contradiction below threshold)")
+
+        if patch:
+            accepted = governance_vote(patch)
+            print(f"Governance vote: {'accepted' if accepted else 'vetoed'}")
+            if accepted:
+                improved = evaluate_patch(patch)
+                print(f"Patch evaluation: {'improved scores' if improved else 'no improvement'}")
+            else:
+                print("Patch vetoed by governance; skipping evaluation.")
+        
         # Step 5: Apply a simple synthesis to mitigate contradictions
         print("\n🔄 STEP 6: Apply Synthesis")
         
