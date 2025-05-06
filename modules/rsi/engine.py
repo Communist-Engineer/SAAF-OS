@@ -15,14 +15,21 @@ import logging
 import random
 import string
 import time
+import hashlib
 from typing import Dict, List, Any, Optional, Tuple, Union
+from datetime import datetime
+
 import numpy as np
 from .crypto_utils import sign_patch, verify_patch_signature, ensure_keys_exist
+from .audit_log import log_rsi_event, get_rsi_audit_log, AuditLog
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, 
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("RSIEngine")
+
+# Constants
+BLOB_STORAGE_DIR = os.path.expanduser("~/.saaf_os/blob_store")
 
 
 class Patch:
@@ -106,6 +113,82 @@ class Patch:
             status=filtered.get("status")
         )
 
+    def compute_content_hash(self) -> str:
+        """
+        Compute a deterministic content hash for this patch.
+        
+        Returns:
+            Hash of the patch content as a hex string
+        """
+        # Hash both the module path and content to ensure unique identification
+        content_to_hash = f"{self.module_path}:{self.content}"
+        return hashlib.sha256(content_to_hash.encode("utf-8")).hexdigest()
+
+
+class BlobStore:
+    """
+    Content-addressed blob storage for original module content.
+    Enables O(1) rollback to previous versions.
+    """
+    
+    def __init__(self):
+        """Initialize the blob store."""
+        self._ensure_blob_directory()
+        
+    def _ensure_blob_directory(self):
+        """Create the blob directory if it doesn't exist."""
+        os.makedirs(BLOB_STORAGE_DIR, exist_ok=True)
+    
+    def _get_blob_path(self, content_hash: str) -> str:
+        """
+        Get the path to a blob file.
+        
+        Args:
+            content_hash: Hash identifying the blob
+            
+        Returns:
+            Path to the blob file
+        """
+        return os.path.join(BLOB_STORAGE_DIR, content_hash)
+    
+    def store_blob(self, content: str) -> str:
+        """
+        Store content in the blob store.
+        
+        Args:
+            content: Content to store
+            
+        Returns:
+            Content hash that can be used to retrieve the blob
+        """
+        content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        blob_path = self._get_blob_path(content_hash)
+        
+        # Only write if doesn't exist (content addressing)
+        if not os.path.exists(blob_path):
+            with open(blob_path, 'w') as f:
+                f.write(content)
+        
+        return content_hash
+    
+    def get_blob(self, content_hash: str) -> Optional[str]:
+        """
+        Retrieve content from the blob store.
+        
+        Args:
+            content_hash: Hash of the content to retrieve
+            
+        Returns:
+            The content if found, None otherwise
+        """
+        blob_path = self._get_blob_path(content_hash)
+        
+        if not os.path.exists(blob_path):
+            return None
+        
+        with open(blob_path, 'r') as f:
+            return f.read()
+
 
 class RSIEngine:
     """
@@ -125,8 +208,12 @@ class RSIEngine:
         
         self.message_bus = message_bus
         self.patches: Dict[str, Patch] = {}  # Maps patch_id to Patch
-        self.rollback_table: Dict[str, str] = {}  # Maps patch_id to original content
+        self.rollback_table: Dict[str, Dict[str, Any]] = {}  # Maps patch_id to rollback info
         self.active_patches: List[str] = []  # List of applied patch IDs
+        self.module_version_map: Dict[str, str] = {}  # Maps module_path to current patch_id
+        
+        # Initialize blob store for content-addressed storage
+        self.blob_store = BlobStore()
         
         # Register message handlers if message bus is provided
         if self.message_bus:
@@ -167,48 +254,56 @@ class RSIEngine:
             description=description or f"Auto-generated patch for {module_path}"
         )
 
-        # Sign and verify the same pre-signature dictionary (excluding signatures)
-        patch.signed_dict = patch.to_dict(exclude_fields=["signatures"])
-        sig = sign_patch(patch.signed_dict, key_name="rsi_signer")
-
-        assert verify_patch_signature(patch.signed_dict, sig), "Signature verification failed after signing."
-
-        # Now assign signature AFTER verification
-        patch.signatures = [{"signer": "rsi_signer", "signature": sig}]
-
-        # For critical patches, require a second signature (simulate for now)
-        if critical:
-            patch_dict_for_signing2 = patch.to_dict(exclude_fields=["signatures"])
-            signer2_path = os.path.expanduser("~/.saaf_keys/rsi_signer2.key")
-            if os.path.exists(signer2_path):
-                sig2 = sign_patch(patch_dict_for_signing2, key_name="rsi_signer2")
-                assert verify_patch_signature(patch_dict_for_signing2, sig2, key_name="rsi_signer2"), "Second signature verification failed."
-            else:
-                # Simulate second signature if key doesn't exist
-                sig2 = sig
-            patch.signatures.append({"signer": "rsi_signer2", "signature": sig2})
-
+        # Sign the patch immediately upon creation
+        # This ensures that when a patch is proposed, it's already signed
+        self.sign_patch(patch, critical=critical)
+        
+        # Store the patch
         self.patches[patch.patch_id] = patch
-        print("Signed patch bytes:", patch.signed_dict)
-        print("Signature:", sig)
-        print("Patch ID:", patch.patch_id)
-        print("Patch content:", patch.content)
-        print("Patch description:", patch.description)
-        print("Patch signatures:", patch.signatures)
-        print("Patch status:", patch.status)
-        print("Patch creation time:", patch.creation_time)
-        print("Patch author:", patch.author)
-        print("Patch module path:", patch.module_path)
-        print("Patch rollback table:", self.rollback_table)
-        print("Patch active patches:", self.active_patches)
-        print("=== DEBUG SIGNATURE ROUNDTRIP ===")
-        print("patch.to_dict():", patch.to_dict())
-        print("Signature:", sig)
-        print("Verifies?", verify_patch_signature(patch.to_dict(exclude_fields=["signatures"]), sig))
-        print("Signer key path:", os.path.expanduser(f"~/.saaf_keys/rsi_signer.key"))
-        print("=================================")
+        
+        # Log the patch generation event
+        log_rsi_event("proposal", {
+            "patch_id": patch.patch_id,
+            "module_path": patch.module_path,
+            "description": patch.description,
+            "author": patch.author,
+            "critical": critical
+        })
+        
         return patch
     
+    def sign_patch(self, patch: Patch, critical: bool = False) -> None:
+        """
+        Sign a patch with the appropriate keys.
+        
+        Args:
+            patch: The patch to sign
+            critical: Whether the patch is critical and requires two signatures
+        """
+        # First signature (always present)
+        patch_dict_for_signing = patch.to_dict(exclude_fields=["signatures"])
+        
+        # Store the dict used for signing to avoid recomputation
+        patch.signed_dict = patch_dict_for_signing
+        
+        sig = sign_patch(patch_dict_for_signing, key_name="rsi_signer")
+        assert verify_patch_signature(patch_dict_for_signing, sig, key_name="rsi_signer"), "Signature verification failed after signing."
+        
+        # Set initial signature
+        patch.signatures = [{"signer": "rsi_signer", "signature": sig}]
+        
+        # For critical patches, add a second signature
+        if critical:
+            signer2_path = os.path.expanduser("~/.saaf_keys/rsi_signer2.key")
+            if os.path.exists(signer2_path):
+                sig2 = sign_patch(patch_dict_for_signing, key_name="rsi_signer2")
+                assert verify_patch_signature(patch_dict_for_signing, sig2, key_name="rsi_signer2"), "Second signature verification failed."
+            else:
+                # Simulate second signature if key doesn't exist (for testing)
+                sig2 = sig
+            
+            patch.signatures.append({"signer": "rsi_signer2", "signature": sig2})
+
     def propose_patch(self, patch: Patch) -> bool:
         """
         Propose a patch to the governance system via the message bus.
@@ -223,6 +318,11 @@ class RSIEngine:
             logger.error("Cannot propose patch: no message bus connected")
             return False
         
+        # Ensure the patch is signed
+        if not patch.signatures:
+            logger.error("Cannot propose unsigned patch")
+            return False
+        
         logger.info(f"Proposing patch {patch.patch_id}: {patch.description}")
         
         # Store the patch
@@ -233,8 +333,16 @@ class RSIEngine:
             "patch": patch.to_dict()
         })
         
+        # Log the proposal event
+        log_rsi_event("proposal", {
+            "patch_id": patch.patch_id,
+            "module_path": patch.module_path,
+            "description": patch.description,
+            "author": patch.author
+        })
+        
         return True
-    
+        
     def verify_patch_signatures(self, patch: Patch, critical: bool = False, force_recompute: bool = False) -> bool:
         """
         Verify the signatures of a patch.
@@ -242,16 +350,20 @@ class RSIEngine:
         Args:
             patch: The patch to verify
             critical: Whether the patch is critical and requires two signatures
+            force_recompute: Force recomputation of the patch dict (for tampered content)
             
         Returns:
             True if signatures are valid, False otherwise
         """
         if not patch.signatures:
             return False
-            
-
-        patch_dict = patch.to_dict(exclude_fields=["signatures"]) if force_recompute else getattr(patch, "signed_dict", patch.to_dict(exclude_fields=["signatures"]))
         
+        # Use the stored signed_dict if available, otherwise recompute it
+        if hasattr(patch, 'signed_dict') and not force_recompute:
+            patch_dict = patch.signed_dict
+        else:
+            patch_dict = patch.to_dict(exclude_fields=["signatures"])
+            
         # For critical patches, we need at least 2 signatures
         if critical and len(patch.signatures) < 2:
             return False
@@ -261,9 +373,27 @@ class RSIEngine:
             signer = sig["signer"]
             signature = sig["signature"]
             if not verify_patch_signature(patch_dict, signature, key_name=signer):
+                logger.error(f"Signature verification failed for {patch.patch_id} with signer {signer}")
                 return False
                 
         return True
+    
+    def _store_original_content(self, module_path: str) -> str:
+        """
+        Store the original content of a module before applying a patch.
+        
+        Args:
+            module_path: Path to the module being patched
+            
+        Returns:
+            Content hash for the stored original content
+        """
+        # In a real implementation, we would read the actual file content
+        # For MVP, we simulate it
+        original_content = f"Original content of {module_path}"
+        
+        # Store in blob store
+        return self.blob_store.store_blob(original_content)
     
     def apply_patch(self, patch_id: str, critical: bool = False) -> bool:
         """
@@ -280,37 +410,45 @@ class RSIEngine:
             logger.error(f"Cannot apply patch: {patch_id} not found")
             return False
         
-        
         patch = self.patches[patch_id]
-        logger.debug(f"Applying patch: {patch.patch_id}")
-        logger.debug(f"Patch status: {patch.status}")
-        logger.debug(f"Patch content: {patch.content}")
-        logger.debug(f"Patch signatures: {patch.signatures}")
-        logger.debug(f"Signature verification: {self.verify_patch_signatures(patch)}")
-
+        
         if not self.verify_patch_signatures(patch, critical=critical):
             logger.error(f"Patch {patch_id} signature verification failed. Not applying.")
             return False
         
         logger.info(f"Applying patch {patch_id}: {patch.description}")
         
-        # In a real implementation, we would:
-        # 1. Back up the original file content
-        # 2. Apply the diff to the file
-        # 3. Update the system
-        
-        # For MVP, we just simulate these steps
         try:
-            # Get original content (mock)
-            original_content = f"Original content of {patch.module_path}"
+            # Store the original content hash
+            original_content_hash = self._store_original_content(patch.module_path)
             
-            # Store in rollback table
-            self.rollback_table[patch_id] = original_content
+            # Calculate the content hash for this patch
+            patch_content_hash = patch.compute_content_hash()
+            
+            # Store in rollback table with more metadata
+            self.rollback_table[patch_id] = {
+                "module_path": patch.module_path,
+                "original_hash": original_content_hash,
+                "patch_hash": patch_content_hash,
+                "applied_time": time.time()
+            }
+            
+            # Update module version mapping
+            self.module_version_map[patch.module_path] = patch_id
             
             # Mark as applied
             patch.status = "applied"
             if patch_id not in self.active_patches:
                 self.active_patches.append(patch_id)
+            
+            # Log the application event
+            log_rsi_event("patch_applied", {
+                "patch_id": patch_id,
+                "module_path": patch.module_path,
+                "description": patch.description,
+                "original_hash": original_content_hash,
+                "patch_hash": patch_content_hash
+            })
             
             # Notify via message bus
             if self.message_bus:
@@ -327,7 +465,9 @@ class RSIEngine:
     
     def rollback_patch(self, patch_id: str) -> bool:
         """
-        Roll back a previously applied patch.
+        Reverts the system to the last known-good state before the specified patch.
+        Uses content-addressed blobs from the object store.
+        Also updates rollback status metadata.
         
         Args:
             patch_id: ID of the patch to roll back
@@ -340,32 +480,106 @@ class RSIEngine:
             return False
         
         patch = self.patches[patch_id]
+        rollback_info = self.rollback_table[patch_id]
+        
         logger.info(f"Rolling back patch {patch_id}: {patch.description}")
         
-        # In a real implementation, we would:
-        # 1. Restore the original file content
-        # 2. Update the system
-        
-        # For MVP, we just simulate these steps
         try:
+            # Retrieve the original content from the blob store
+            original_content = self.blob_store.get_blob(rollback_info["original_hash"])
+            
+            if not original_content:
+                logger.error(f"Failed to retrieve original content for patch {patch_id}")
+                return False
+            
+            # In a real implementation, we would:
+            # 1. Write the original content back to the file
+            # 2. Update any dependent systems
+            
             # Mark as rolled back
             patch.status = "rolled_back"
+            
+            # Update module version mapping to previous version or None
+            current_module = patch.module_path
+            if current_module in self.module_version_map and self.module_version_map[current_module] == patch_id:
+                # Find the previous patch for this module, if any
+                previous_patches = [p for p in self.patches.values() if
+                                  p.module_path == current_module and
+                                  p.patch_id != patch_id and
+                                  p.status == "applied"]
+                
+                if previous_patches:
+                    # Get the most recent previous patch
+                    prev_patch = max(previous_patches, key=lambda p: p.creation_time)
+                    self.module_version_map[current_module] = prev_patch.patch_id
+                else:
+                    # No previous version, remove from map
+                    del self.module_version_map[current_module]
+            
+            # Remove from active patches
             if patch_id in self.active_patches:
                 self.active_patches.remove(patch_id)
+            
+            # Find all patches that depend on this one and roll them back too 
+            # This is a simplified dependency model - in reality you would use a proper dependency graph
+            dependent_patches = []
+            for pid, p in self.patches.items():
+                if (p.status == "applied" and 
+                    pid != patch_id and 
+                    pid in self.active_patches):
+                    # For this demo, we assume patches to "moduleN.py" depend on "module(N-1).py"
+                    # e.g., module2.py depends on module1.py
+                    # In a real implementation, actual dependency information would be used
+                    if p.module_path.endswith(".py") and current_module.endswith(".py"):
+                        p_number = p.module_path.split("module")
+                        current_number = current_module.split("module")
+                        if len(p_number) > 1 and len(current_number) > 1:
+                            try:
+                                p_num = int(p_number[1].split(".")[0])
+                                current_num = int(current_number[1].split(".")[0])
+                                if p_num > current_num:
+                                    dependent_patches.append(p)
+                            except ValueError:
+                                pass
+            
+            # Log the rollback event
+            log_rsi_event("patch_rolled_back", {
+                "patch_id": patch_id,
+                "module_path": patch.module_path,
+                "description": patch.description,
+                "original_hash": rollback_info["original_hash"],
+                "reason": "governance_veto",  # or other reasons like contradiction spike
+                "dependent_patches": [p.patch_id for p in dependent_patches]
+            })
             
             # Notify via message bus
             if self.message_bus:
                 self.message_bus.publish("rsi.patch.rolled_back", {
                     "patch_id": patch_id,
-                    "success": True
+                    "success": True,
+                    "dependent_patches": [p.patch_id for p in dependent_patches]
                 })
             
-            logger.info(f"RSI patch vetoed by governance → rollback successful")
+            # Recursively rollback dependent patches
+            for dep_patch in dependent_patches:
+                logger.info(f"Rolling back dependent patch {dep_patch.patch_id} ({dep_patch.module_path})")
+                self.rollback_patch(dep_patch.patch_id)
+            
+            logger.info(f"RSI patch rolled back successfully")
             return True
             
         except Exception as e:
             logger.error(f"Failed to roll back patch {patch_id}: {str(e)}")
             return False
+    
+    def get_rollback_status(self) -> Dict[str, str]:
+        """
+        Returns the current rollback status per module.
+        
+        Returns:
+            Dict mapping module paths to their current patch IDs
+        """
+        return self.module_version_map.copy()
     
     def _handle_governance_decision(self, message: Dict[str, Any]) -> None:
         """
@@ -380,6 +594,7 @@ class RSIEngine:
         
         patch_id = message["patch_id"]
         decision = message["decision"]
+        reason = message.get("reason", "")
         
         if patch_id not in self.patches:
             logger.error(f"Unknown patch ID in governance decision: {patch_id}")
@@ -387,10 +602,26 @@ class RSIEngine:
         
         patch = self.patches[patch_id]
         
+        # Log the governance decision
+        log_rsi_event("governance_decision", {
+            "patch_id": patch_id,
+            "module_path": patch.module_path,
+            "decision": decision,
+            "reason": reason
+        })
+        
         if decision == "approved":
             logger.info(f"Patch {patch_id} approved by governance")
             patch.status = "approved"
-            applied = self.apply_patch(patch_id, critical=(len(patch.signatures) > 1))
+            
+            # Verify signatures before applying
+            is_critical = len(patch.signatures) > 1
+            if not self.verify_patch_signatures(patch, critical=is_critical):
+                logger.error(f"Patch {patch_id} signature verification failed after approval. Not applying.")
+                return
+                
+            # Apply the patch
+            applied = self.apply_patch(patch_id, critical=is_critical)
             if not applied:
                 logger.error(f"Patch {patch_id} failed to apply after approval.")
         elif decision == "rejected":
@@ -429,6 +660,16 @@ class RSIEngine:
         quality_score = random.random()
         compatibility_score = random.random()
         security_score = random.random()
+        
+        # Log the evaluation result
+        patch = self.patches[patch_id]
+        log_rsi_event("vote_result", {
+            "patch_id": patch_id,
+            "module_path": patch.module_path,
+            "quality_score": quality_score,
+            "compatibility_score": compatibility_score,
+            "security_score": security_score,
+        })
         
         # Respond with evaluation results
         if self.message_bus:
