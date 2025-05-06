@@ -25,15 +25,16 @@ class ScenarioLoader:
             content = f.read()
         # Simple parser: each scenario starts with '### Scenario N:'
         scenario_blocks = re.split(r'###\s+Scenario\s+(\d+):', content)
+        # Each pair: [<prefix>, num1, block1, num2, block2, ...]
         for i in range(1, len(scenario_blocks), 2):
             num = scenario_blocks[i].strip()
-            block = scenario_blocks[i+1]
-            title_match = re.match(r'"([^"]+)"', block)
+            raw = scenario_blocks[i+1].strip()
+            title_match = re.match(r'"([^"]+)"', raw)
             title = title_match.group(1) if title_match else f"Scenario {num}"
             scenarios[num] = {
                 "number": num,
                 "title": title,
-                "raw": block.strip()
+                "raw": raw
             }
         return scenarios
 

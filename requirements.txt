@@ -2,3 +2,6 @@ pynacl
 rdflib
 pytest
 pytest-json-report
+numpy
+networkx
+torch
