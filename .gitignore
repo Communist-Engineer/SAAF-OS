@@ -5,3 +5,6 @@ __pycache__/
 # Output artifacts
 ooutput/
 results/
+
+# Ensure keys are not tracked by git
+data/keys/

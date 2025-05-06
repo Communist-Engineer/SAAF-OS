@@ -21,6 +21,19 @@ def ensure_keys_exist(key_name: str = 'rsi_signer'):
             f.write(sk.verify_key.encode())
     return priv_path, pub_path
 
+def generate_keypair(key_name: str = 'rsi_signer'):
+    """
+    Generate and store an Ed25519 keypair in data/keys/.
+    """
+    key_dir = os.path.join(os.path.dirname(__file__), '../../data/keys')
+    os.makedirs(key_dir, exist_ok=True)
+    sk = SigningKey.generate()
+    with open(os.path.join(key_dir, f'{key_name}.priv'), 'wb') as f:
+        f.write(sk.encode())
+    with open(os.path.join(key_dir, f'{key_name}.pub'), 'wb') as f:
+        f.write(sk.verify_key.encode())
+    return True
+
 def load_signing_key(key_name: str = 'rsi_signer') -> SigningKey:
     priv_path, _ = ensure_keys_exist(key_name)
     with open(priv_path, 'rb') as f:
