@@ -297,5 +297,43 @@ class TestDummyRSIEngine(unittest.TestCase):
         self.assertTrue(patch2.patch_id.startswith("test_patch_"))
 
 
+import os
+import pytest
+from modules.rsi.engine import RSIEngine, Patch
+from modules.rsi.crypto_utils import sign_patch, verify_patch_signature
+
+def test_patch_signature_valid():
+    engine = RSIEngine()
+    patch = engine.generate_patch("modules/test_module.py", description="Test patch")
+    # Should verify with correct signature
+    assert engine.verify_patch_signatures(patch) is True
+
+def test_patch_signature_tampered():
+    engine = RSIEngine()
+    patch = engine.generate_patch("modules/test_module.py", description="Test patch")
+    # Tamper with patch content
+    patch.content = "@@ -1,3 +1,3 @@\n-old line\n+TAMPERED\n context"
+    # Should fail verification
+    assert engine.verify_patch_signatures(patch) is False
+
+def test_critical_patch_requires_two_signatures(monkeypatch):
+    engine = RSIEngine()
+    # Simulate presence of second key
+    monkeypatch.setattr(os.path, "exists", lambda path: True)
+    patch = engine.generate_patch("modules/test_module.py", description="Critical patch", critical=True)
+    # Should have two signatures
+    assert len(patch.signatures) == 2
+    # Should verify with both signatures
+    assert engine.verify_patch_signatures(patch, critical=True) is True
+
+def test_critical_patch_missing_second_signature():
+    engine = RSIEngine()
+    patch = engine.generate_patch("modules/test_module.py", description="Critical patch", critical=True)
+    # Remove second signature
+    patch.signatures = patch.signatures[:1]
+    # Should fail verification for critical
+    assert engine.verify_patch_signatures(patch, critical=True) is False
+
+
 if __name__ == "__main__":
     unittest.main()

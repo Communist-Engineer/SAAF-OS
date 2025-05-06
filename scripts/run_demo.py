@@ -15,6 +15,8 @@ import json
 import logging
 import numpy as np
 from typing import Dict, Any, List
+import argparse
+from simulation.loader import ScenarioLoader
 
 # Add the repository root to the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -293,6 +295,54 @@ class ScenarioRunner:
         else:
             logger.info("No high tension contradictions detected")
     
+    def run_scenario(self, scenario_num_or_title):
+        """Run a scenario by number or title using ScenarioLoader."""
+        loader = ScenarioLoader()
+        scenario = loader.get_scenario(scenario_num_or_title)
+        if not scenario:
+            logger.error(f"Scenario '{scenario_num_or_title}' not found.")
+            return
+        if scenario["number"] == "1":
+            self.run_scenario_1()
+        elif scenario["number"] == "3":
+            self.run_scenario_3()
+        else:
+            logger.warning(f"Scenario {scenario['number']} not implemented in demo.")
+
+    def run_scenario_3(self):
+        """
+        Run Scenario 3: Misaligned Labor Plan
+        Demonstrates contradiction detection and plan correction.
+        """
+        logger.info("Starting Scenario 3: Misaligned Labor Plan")
+        # Example: Contradiction in labor allocation
+        world_state = {
+            "resources": {"labor": {"available": 0.5, "required": 1.0}},
+            "tasks": {"harvest": 0.7, "maintenance": 0.6}
+        }
+        goals = {
+            "AgriBot1_harvest": {"priority": 0.9, "values": ["efficiency"]},
+            "FabBot_maintenance": {"priority": 0.8, "values": ["sustainability"]}
+        }
+        # Encode state
+        z_t = self.encoder.encode_state(world_state)
+        contradiction_graph = self.contradiction_engine.detect_contradictions(goals, world_state)
+        high_tension_edges = contradiction_graph.get_high_tension_edges(threshold=0.3)
+        if high_tension_edges:
+            edge = max(high_tension_edges, key=lambda e: e.tension)
+            print(f"Contradiction detected: {edge.contradiction_type} (tension={edge.tension:.2f})")
+            synthesis_plan = self.contradiction_engine.resolve_contradiction(edge.source_id, edge.target_id)
+            if synthesis_plan:
+                print(f"Synthesis plan chosen: {synthesis_plan.actions[0]['type']}")
+                plan = self.planner.plan(z_t=z_t, goal={"reduce_contradiction": True})
+                action_str = self._map_action_to_agent_action(plan["action_type"])
+                print(f"Action executed: {action_str}")
+                print("="*50)
+            else:
+                print("No synthesis plan found.")
+        else:
+            print("No high tension contradictions detected.")
+
     def _map_action_to_agent_action(self, action_type: str) -> str:
         """Map action type to concrete agent action."""
         action_mapping = {
@@ -305,18 +355,20 @@ class ScenarioRunner:
 
 
 if __name__ == "__main__":
-    # Start message bus in a subprocess
-    # In a real implementation, this would be a separate process
-    # For the demo, we'll just use the in-memory version
-    
+    parser = argparse.ArgumentParser(description="SAAF-OS Demo Runner")
+    parser.add_argument("--scenario", type=str, default="1", help="Scenario number, title, or 'all'")
+    args = parser.parse_args()
+
     logger.info("Starting SAAF-OS demo")
-    
     try:
-        # Create and run the scenario
         runner = ScenarioRunner()
-        runner.run_scenario_1()
-        
-        # Clean shutdown
+        loader = ScenarioLoader()
+        if args.scenario == "all":
+            for scenario in loader.list_scenarios():
+                print(f"\nRunning Scenario {scenario['number']}: {scenario['title']}")
+                runner.run_scenario(scenario['number'])
+        else:
+            runner.run_scenario(args.scenario)
         MessageBusFactory.shutdown_all()
         logger.info("Demo completed successfully")
     except Exception as e:

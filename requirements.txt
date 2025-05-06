@@ -1,0 +1,4 @@
+pynacl
+rdflib
+pytest
+pytest-json-report

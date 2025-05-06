@@ -17,6 +17,7 @@ import string
 import time
 from typing import Dict, List, Any, Optional, Tuple, Union
 import numpy as np
+from .crypto_utils import sign_patch, verify_patch_signature
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, 
@@ -34,7 +35,8 @@ class Patch:
                  content: str, 
                  description: str,
                  author: str = "RSI-Engine",
-                 patch_id: Optional[str] = None):
+                 patch_id: Optional[str] = None,
+                 signatures: Optional[list] = None):
         """
         Initialize a patch.
         
@@ -44,6 +46,7 @@ class Patch:
             description: Description of what the patch does
             author: Who/what created the patch
             patch_id: Unique identifier for the patch (generated if None)
+            signatures: List of signatures for the patch
         """
         self.module_path = module_path
         self.content = content
@@ -52,6 +55,7 @@ class Patch:
         self.creation_time = time.time()
         self.patch_id = patch_id if patch_id else str(uuid.uuid4())
         self.status = "proposed"  # proposed, approved, rejected, applied, rolled_back
+        self.signatures = signatures or []  # List of dicts: [{signer, signature}]
     
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -67,7 +71,8 @@ class Patch:
             "author": self.author,
             "creation_time": self.creation_time,
             "status": self.status,
-            "content": self.content
+            "content": self.content,
+            "signatures": self.signatures
         }
 
     @classmethod
@@ -86,7 +91,8 @@ class Patch:
             content=data["content"],
             description=data["description"],
             author=data["author"],
-            patch_id=data["patch_id"]
+            patch_id=data["patch_id"],
+            signatures=data.get("signatures", [])
         )
         patch.creation_time = data["creation_time"]
         patch.status = data["status"]
@@ -119,7 +125,7 @@ class RSIEngine:
         self.message_bus.subscribe("rsi.patch.governance_decision", self._handle_governance_decision)
         self.message_bus.subscribe("rsi.patch.evaluate", self._handle_patch_evaluation)
     
-    def generate_patch(self, module_path: str, description: str = "") -> Patch:
+    def generate_patch(self, module_path: str, description: str = "", critical: bool = False) -> Patch:
         """
         Generate a simple random patch for demonstration purposes.
         In a real implementation, this would involve more sophisticated analysis.
@@ -127,6 +133,7 @@ class RSIEngine:
         Args:
             module_path: Path to the module to patch
             description: Description of what the patch aims to do
+            critical: Whether the patch is critical and requires two signatures
             
         Returns:
             Generated patch
@@ -141,6 +148,16 @@ class RSIEngine:
             content=content,
             description=description or f"Auto-generated patch for {module_path}"
         )
+        
+        # Sign patch
+        patch_bytes = json.dumps({k: v for k, v in patch.to_dict().items() if k != 'signatures'}, sort_keys=True).encode()
+        sig = sign_patch(patch_bytes, key_name="rsi_signer")
+        patch.signatures.append({"signer": "rsi_signer", "signature": sig})
+        
+        # For critical patches, require a second signature (simulate for now)
+        if critical:
+            sig2 = sign_patch(patch_bytes, key_name="rsi_signer2") if os.path.exists(os.path.join(os.path.dirname(__file__), '../../data/keys/rsi_signer2_private.key')) else sig
+            patch.signatures.append({"signer": "rsi_signer2", "signature": sig2})
         
         self.patches[patch.patch_id] = patch
         return patch
@@ -171,12 +188,36 @@ class RSIEngine:
         
         return True
     
-    def apply_patch(self, patch_id: str) -> bool:
+    def verify_patch_signatures(self, patch: Patch, critical: bool = False) -> bool:
+        """
+        Verify the signatures of a patch.
+        
+        Args:
+            patch: The patch to verify
+            critical: Whether the patch is critical and requires two signatures
+            
+        Returns:
+            True if signatures are valid, False otherwise
+        """
+        patch_bytes = json.dumps({k: v for k, v in patch.to_dict().items() if k != 'signatures'}, sort_keys=True).encode()
+        if critical:
+            if len(patch.signatures) < 2:
+                return False
+            return all(
+                verify_patch_signature(patch_bytes, s["signature"], key_name=s["signer"]) for s in patch.signatures[:2]
+            )
+        else:
+            if not patch.signatures:
+                return False
+            return verify_patch_signature(patch_bytes, patch.signatures[0]["signature"], key_name=patch.signatures[0]["signer"])
+    
+    def apply_patch(self, patch_id: str, critical: bool = False) -> bool:
         """
         Apply a patch to the system.
         
         Args:
             patch_id: ID of the patch to apply
+            critical: Whether the patch is critical and requires two signatures
             
         Returns:
             True if successfully applied, False otherwise
@@ -186,6 +227,11 @@ class RSIEngine:
             return False
         
         patch = self.patches[patch_id]
+        
+        if not self.verify_patch_signatures(patch, critical=critical):
+            logger.error(f"Patch {patch_id} signature verification failed. Not applying.")
+            return False
+        
         logger.info(f"Applying patch {patch_id}: {patch.description}")
         
         # In a real implementation, we would:
