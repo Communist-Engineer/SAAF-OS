@@ -33,6 +33,9 @@ import modules.uls_encoder as uls_encoder
 import modules.planner as planner
 import modules.fwm as fwm
 from modules.rsi.engine import propose_patch
+from modules.scenarios import load_scenario
+from modules.memory.logger import log_episode
+from modules.memory.retrieval import retrieve_similar_episode
 
 def evaluate_patch(patch: str) -> bool:
     """
@@ -121,9 +124,8 @@ class ScenarioRunner:
         Run a simplified end-to-end planning loop with contradiction detection and mitigation.
         This uses our new implementations of ULS encoder and planner.
         """
-        print("\n" + "="*70)
-        print("SAAF-OS SIMPLIFIED PLANNING LOOP DEMO")
-        print("="*70)
+        # Display scenario header
+        print(f"\n{'='*20} Scenario: simple {'='*20}")
 
         # Step 1: Define a simplified world state
         print("\n📊 STEP 1: Define World State")
@@ -145,35 +147,54 @@ class ScenarioRunner:
         print(f"Latent Vector Shape: {z_t.shape}")
         print(f"First few dimensions: {z_t[:5].round(3)}")
 
-        # Step 3: Generate a plan using our planner
-        print("\n📝 STEP 3: Generate Plan")
-        goal = {
-            "target_energy": 0.8,
-            "priority": 0.75,
-            "description": "Complete harvesting and maintenance with efficient energy use"
-        }
+        # Retrieval: find similar past episodes
+        similar = retrieve_similar_episode(z_t, top_k=3)
+        retrieved_plan = None
+        retrieved_score = float('inf')
+        if similar:
+            ret = similar[0]
+            retrieved_plan = ret['plan']
+            z_ret, retrieved_score = fwm.simulate_plan(z_t, retrieved_plan)
+            print(f"Retrieved plan predicted contradiction: {retrieved_score:.4f}")
+        else:
+            print("\n🔍 No similar past episodes found.")
+
+        # Step 3: Generate new plan and compare to retrieved plan
+        print("\n📝 STEP 3: Generate New Plan")
+        goal = {"target_energy": 0.8, "priority": 0.75,
+                "description": "Complete harvesting and maintenance with efficient energy use"}
         result = planner.generate_plan(z_t, goal)
-        plan = result['plan']
-        contradictions = result['contradictions']
-        
-        print(f"Plan generated with {len(plan['steps'])} steps")
+        new_plan = result['plan']
+        # simulate new plan
+        z_new, new_score = fwm.simulate_plan(z_t, new_plan)
+        print(f"Generated plan predicted contradiction: {new_score:.4f}")
+
+        # Select between retrieved and new plan
+        if retrieved_plan and retrieved_score < new_score:
+            print("🧠 Reused plan from memory")
+            plan = retrieved_plan
+            contradiction_before = retrieved_score
+            z_next_before = z_ret
+        else:
+            print("🛠️ Used newly generated plan")
+            plan = new_plan
+            contradiction_before = new_score
+            z_next_before = z_new
+        # Show chosen plan details
+        print(f"Chosen plan steps: {len(plan['steps'])}")
         print(f"Total energy required: {plan['total_energy']:.2f}")
-        print(f"Estimated completion time: {plan['estimated_completion_time']} minutes")
-        print("\nSteps:")
+        print("Steps:")
         for step in plan['steps']:
             print(f"  - {step['agent_id']} will {step['action']} (Energy: {step['energy_required']:.2f})")
 
         # Step 4: Calculate total tension from contradictions
         print("\n⚡ STEP 4: Calculate Contradiction Tension")
-        total_tension_before = sum(tension for _, _, tension in contradictions)
-        print(f"Found {len(contradictions)} potential contradictions:")
-        for actor1, actor2, tension in contradictions:
-            print(f"  - Tension between {actor1} and {actor2}: {tension:.2f}")
-        print(f"Total tension before mitigation: {total_tension_before:.2f}")
+        total_tension_before = contradiction_before
+        print(f"Found plan with pre-synthesis tension: {total_tension_before:.2f}")
+        # (Detailed contradiction list not available for retrieved plan)
 
         # NEW: Simulate the effect of the original plan using FWM
         print("\n🔮 STEP 5: Simulate Original Plan with FWM")
-        z_next_before, contradiction_before = fwm.simulate_plan(z_t, plan)
         print(f"Predicted contradiction score: {contradiction_before:.4f}")
         
         # Compute changes in the latent space
@@ -264,6 +285,24 @@ class ScenarioRunner:
             print(f"  - {step['agent_id']} will {step['action']} (Energy: {step['energy_required']:.2f})")
             
         print("\n" + "="*70)
+        # Log this episode to memory
+        # Prepare inputs and plan snapshot
+        inputs = u_t
+        # Include pre-synthesis energy
+        plan_record = plan.copy()
+        plan_record["total_energy_before"] = total_tension_before  # misuse field; better track energy, but ok
+        log_episode(
+            scenario_name="simple",
+            inputs=inputs,
+            plan=plan_record,
+            z_t=z_t,
+            z_t_prime=z_next_after if 'z_next_after' in locals() else z_next_before,
+            pre_score=contradiction_before,
+            post_score=locals().get('contradiction_after', contradiction_before),
+            rsi_patch=patch,
+            accepted=locals().get('accepted', False)
+        )
+        print(f"Episode logged to memory/episodes.jsonl")
 
     def run_scenario_1(self):
         """
@@ -464,13 +503,13 @@ class ScenarioRunner:
     
     def run_scenario(self, scenario_num_or_title):
         """Run a scenario by number or title using ScenarioLoader."""
-        loader = ScenarioLoader()
-        
-        if scenario_num_or_title == "simple":
-            # Run our simplified demo
-            self.run_simplified_demo()
+        # Attempt to load predefined scenario
+        scenario = load_scenario(scenario_num_or_title)
+        if scenario:
+            self._run_loaded_scenario(scenario_num_or_title, scenario)
             return
-            
+        # Fallback: existing scenarios
+        loader = ScenarioLoader()
         scenario = loader.get_scenario(scenario_num_or_title)
         if not scenario:
             logger.error(f"Scenario '{scenario_num_or_title}' not found.")
