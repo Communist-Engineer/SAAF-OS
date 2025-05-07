@@ -2,25 +2,26 @@
 Simplified Unified Latent Space (ULS) Encoder for SAAF-OS
 
 This module implements a simplified ULS Encoder that converts raw system state (u_t) 
-into a unified latent representation (z_t) with 16 dimensions.
+into a unified latent representation (z_t) with configurable dimensions.
 """
 
 import numpy as np
 from typing import Dict, Any, List, Union
 
-def encode_state(u_t: dict) -> np.ndarray:
+def encode_state(u_t: dict, output_dim: int = 16) -> np.ndarray:
     """
-    Encode raw system state (u_t) into a 16-dimensional unified latent space (z_t).
+    Encode raw system state (u_t) into a unified latent space (z_t).
     
     Args:
         u_t: Dictionary containing numerical or list inputs (e.g., power levels, goals)
             Expected keys can include 'solar', 'demand', and other system state metrics
+        output_dim: Dimension of the output vector (default: 16)
     
     Returns:
-        z_t: A 16-dimensional NumPy vector representing the state in latent space
+        z_t: A NumPy vector representing the state in latent space with the specified dimension
     """
-    # Initialize a zero vector
-    z_t = np.zeros(16)
+    # Initialize a zero vector with the specified dimension
+    z_t = np.zeros(output_dim)
     
     # Fill the vector with values based on u_t keys
     idx = 0
@@ -28,7 +29,7 @@ def encode_state(u_t: dict) -> np.ndarray:
     # Process scalar values
     for key, value in u_t.items():
         if isinstance(value, (int, float)):
-            if idx < 16:
+            if idx < output_dim:
                 # Normalize large values
                 if value > 100:
                     z_t[idx] = value / 1000
@@ -38,7 +39,7 @@ def encode_state(u_t: dict) -> np.ndarray:
         elif isinstance(value, dict):
             # For nested dictionaries, extract values
             for subkey, subvalue in value.items():
-                if isinstance(subvalue, (int, float)) and idx < 16:
+                if isinstance(subvalue, (int, float)) and idx < output_dim:
                     z_t[idx] = subvalue / 10
                     idx += 1
     
@@ -52,7 +53,7 @@ def encode_state(u_t: dict) -> np.ndarray:
             flat_arr = arr.flatten()
             
             # Calculate how many values we can fit
-            remaining_space = 16 - idx
+            remaining_space = output_dim - idx
             elements_to_add = min(len(flat_arr), remaining_space)
             
             # Add as many values as possible
@@ -60,9 +61,9 @@ def encode_state(u_t: dict) -> np.ndarray:
                 z_t[idx:idx+elements_to_add] = flat_arr[:elements_to_add] / 100  # Normalize
                 idx += elements_to_add
     
-    # If we couldn't fill all 16 dimensions, add some noise to remaining dimensions
-    if idx < 16:
-        z_t[idx:] = np.random.randn(16 - idx) * 0.01  # Small random noise
+    # If we couldn't fill all dimensions, add some noise to remaining dimensions
+    if idx < output_dim:
+        z_t[idx:] = np.random.randn(output_dim - idx) * 0.01  # Small random noise
     
     # Normalize the vector to unit length for consistent representation
     norm = np.linalg.norm(z_t)

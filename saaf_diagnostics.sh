@@ -1,38 +1,36 @@
 #!/bin/bash
 
-# Create a temp diagnostics directory
-SNAPSHOT_DIR="saaf_test_snapshot_$(date +%Y%m%d_%H%M%S)"
-mkdir -p "$SNAPSHOT_DIR/tests"
+timestamp=$(date +%Y%m%d_%H%M%S)
+snapshot_dir="saaf_os_snapshot_$timestamp"
+mkdir -p "$snapshot_dir"/{tests,logs,models,memory,modules_subset,diagnostics}
 
-echo "📦 Collecting test files..."
-cp -r tests/*.py "$SNAPSHOT_DIR/tests/" 2>/dev/null
+echo "🔍 Collecting test files..."
+cp -r tests/*.py "$snapshot_dir/tests/" 2>/dev/null
 
-# Capture test metadata if exists
-if [ -d ".pytest_cache" ]; then
-    echo "🧪 Including pytest cache..."
-    cp -r .pytest_cache "$SNAPSHOT_DIR/" 2>/dev/null
-fi
+echo "🧪 Running pytest..."
+pytest -v --tb=short | tee "$snapshot_dir/diagnostics/pytest.log"
 
-# Run pytest and capture log
-echo "📝 Running tests..."
-pytest -v --tb=short | tee "$SNAPSHOT_DIR/test_results.log"
+echo "📁 Copying memory logs..."
+cp memory/*.jsonl "$snapshot_dir/memory/" 2>/dev/null
+cp memory/*.log "$snapshot_dir/logs/" 2>/dev/null
 
-mkdir -p "$SNAPSHOT_DIR/memory"
-cp memory/episodes.jsonl "$SNAPSHOT_DIR/memory/" 2>/dev/null
+echo "🧠 Copying models..."
+cp models/*.pt "$snapshot_dir/models/" 2>/dev/null
 
-mkdir -p "$SNAPSHOT_DIR/models"
-cp models/*.pt "$SNAPSHOT_DIR/models/" 2>/dev/null
+echo "🔬 Capturing key modules..."
+MODULES=(planner.py rl_planner.py fwm.py contradiction_engine.py message_bus.py scenarios.py)
+for m in "${MODULES[@]}"; do
+  find modules -name "$m" -exec cp {} "$snapshot_dir/modules_subset/" \;
+done
 
-mkdir -p "$SNAPSHOT_DIR/modules"
-cp modules/scenarios.py "$SNAPSHOT_DIR/modules/" 2>/dev/null
+echo "🔢 Capturing system metadata..."
+git rev-parse HEAD > "$snapshot_dir/diagnostics/git_commit.txt" 2>/dev/null
+python3 -V > "$snapshot_dir/diagnostics/python_version.txt"
+pip freeze > "$snapshot_dir/diagnostics/pip_freeze.txt"
+tree -a -I '__pycache__|.git|.pytest_cache|*.zip|venv|.mypy_cache|__pycache__' > "$snapshot_dir/diagnostics/file_tree.txt"
 
-git rev-parse HEAD > "$SNAPSHOT_DIR/git_commit.txt" 2>/dev/null
+echo "🗜️ Creating zip archive..."
+zip -r "saaf_os_diagnostics_$timestamp.zip" "$snapshot_dir" > /dev/null
+rm -rf "$snapshot_dir"
 
-# Zip the entire test snapshot
-ZIP_NAME="saaf_test_diagnostics.zip"
-zip -r "$ZIP_NAME" "$SNAPSHOT_DIR" > /dev/null
-
-# Cleanup
-rm -rf "$SNAPSHOT_DIR"
-
-echo "✅ Done. Upload $ZIP_NAME to ChatGPT."
+echo "✅ Snapshot complete: saaf_os_diagnostics_$timestamp.zip"

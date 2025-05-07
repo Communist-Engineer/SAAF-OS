@@ -16,16 +16,22 @@ import logging
 import numpy as np
 from typing import Dict, Any, List
 import argparse
-from simulation.loader import ScenarioLoader
 
 # Add the repository root to the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+# Import ScenarioLoader with the correct path
+from simulation.loader import ScenarioLoader  # Import after path adjustment
+
+# Also add simulation directory explicitly
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../simulation')))
 
 # Import SAAF-OS components
 from modules.uls.encoder import DummyULSEncoder
 from modules.contradiction.engine import ContradictionEngine, Node, Edge
 from modules.world_model.fwm import ForwardWorldModel, State, Action
 from modules.planning.rl_planner import RLPlanner, RLConfig
+from modules.planning.plan_arbitrator import select_best_plan
 from bus.adapter import MessageBusAdapter, MessageBusFactory
 
 # Import our simplified implementations
@@ -60,8 +66,16 @@ class ScenarioRunner:
     Class to run the AgriBot Contention at Solar Noon scenario from scenario_deck.md.
     """
     
-    def __init__(self):
-        """Initialize the scenario runner with all SAAF-OS components."""
+    def __init__(self, planner_strategy='auto'):
+        """
+        Initialize the scenario runner with all SAAF-OS components.
+        
+        Args:
+            planner_strategy: Strategy for plan selection ('auto', 'retrieved', 'distilled', 'rl', 'manual')
+        """
+        # Store planner strategy
+        self.planner_strategy = planner_strategy
+        
         # Initialize Message Bus adapters for all components
         self.encoder_bus = MessageBusFactory.get_adapter("uls_encoder")
         self.contradiction_bus = MessageBusFactory.get_adapter("contradiction_engine")
@@ -69,10 +83,11 @@ class ScenarioRunner:
         self.planner_bus = MessageBusFactory.get_adapter("rl_planner")
         
         # Initialize components
-        self.encoder = DummyULSEncoder(output_dim=256)
+        encoder_dim = 16  # Match the actual dimension of the encoder's output
+        self.encoder = DummyULSEncoder(output_dim=encoder_dim)
         self.contradiction_engine = ContradictionEngine()
-        self.forward_world_model = ForwardWorldModel(use_neural_model=False, latent_dim=256)
-        self.planner = RLPlanner(RLConfig(), use_dummy_models=True)
+        self.forward_world_model = ForwardWorldModel(state_dim=encoder_dim, action_dim=32)
+        self.planner = RLPlanner(RLConfig(latent_dim=encoder_dim), use_dummy_models=True)
         
         # Register message handlers
         self._register_message_handlers()
@@ -147,39 +162,69 @@ class ScenarioRunner:
         print(f"Latent Vector Shape: {z_t.shape}")
         print(f"First few dimensions: {z_t[:5].round(3)}")
 
-        # Retrieval: find similar past episodes
+        # Step 3: Generate plans using different strategies
+        print("\n📝 STEP 3: Generate Plans from Different Sources")
+        
+        # 1. Get retrieved plan from memory
+        print("\n📚 Retrieving similar plan from memory:")
         similar = retrieve_similar_episode(z_t, top_k=3)
         retrieved_plan = None
-        retrieved_score = float('inf')
         if similar:
             ret = similar[0]
             retrieved_plan = ret['plan']
-            z_ret, retrieved_score = fwm.simulate_plan(z_t, retrieved_plan)
-            print(f"Retrieved plan predicted contradiction: {retrieved_score:.4f}")
+            print(f"Retrieved plan with {len(retrieved_plan['steps'])} steps")
         else:
-            print("\n🔍 No similar past episodes found.")
-
-        # Step 3: Generate new plan and compare to retrieved plan
-        print("\n📝 STEP 3: Generate New Plan")
+            print("🔍 No similar past episodes found.")
+        
+        # 2. Generate plan using distilled model
+        print("\n🧮 Generating plan using distilled model:")
         goal = {"target_energy": 0.8, "priority": 0.75,
                 "description": "Complete harvesting and maintenance with efficient energy use"}
         result = planner.generate_plan(z_t, goal)
-        new_plan = result['plan']
-        # simulate new plan
-        z_new, new_score = fwm.simulate_plan(z_t, new_plan)
-        print(f"Generated plan predicted contradiction: {new_score:.4f}")
-
-        # Select between retrieved and new plan
-        if retrieved_plan and retrieved_score < new_score:
-            print("🧠 Reused plan from memory")
-            plan = retrieved_plan
-            contradiction_before = retrieved_score
-            z_next_before = z_ret
+        distilled_plan = result['plan']
+        print(f"Generated distilled plan with {len(distilled_plan['steps'])} steps")
+        
+        # 3. Generate plan using RL planner
+        print("\n🤖 Generating plan using RL planner:")
+        rl_plan = self.planner.plan(z_t=z_t, goal=goal)
+        print(f"Generated RL plan with {len(rl_plan.get('steps', [])) if rl_plan else 0} steps")
+        
+        # Step 4: Select the best plan using our arbitration layer
+        print("\n🏆 STEP 4: Select Best Plan")
+        
+        # Only include plans that were successfully generated
+        candidate_plans = [
+            (retrieved_plan, "retrieved") if retrieved_plan else None,
+            (distilled_plan, "distilled"),
+            (rl_plan, "rl") if rl_plan else None
+        ]
+        candidate_plans = [plan for plan in candidate_plans if plan is not None]
+        
+        # Use the plan arbitration layer to select the best plan
+        if self.planner_strategy == 'auto':
+            # Use arbitration layer
+            plan = select_best_plan(z_t, candidate_plans, fwm)
+            arbitration_method = "automatic"
         else:
-            print("🛠️ Used newly generated plan")
-            plan = new_plan
-            contradiction_before = new_score
-            z_next_before = z_new
+            # Manual selection based on planner_strategy
+            for p, source in candidate_plans:
+                if source == self.planner_strategy:
+                    plan = p
+                    print(f"\n✅ Manually selected: {source}_plan")
+                    arbitration_method = "manual"
+                    break
+            else:
+                # Fallback to the first available plan if requested strategy not available
+                plan = candidate_plans[0][0]
+                print(f"\n⚠️ Requested planner '{self.planner_strategy}' not available, using {candidate_plans[0][1]} instead")
+                arbitration_method = "fallback"
+        
+        # Step 5: Calculate total tension from contradictions
+        print("\n⚡ STEP 5: Calculate Contradiction Tension")
+        _, contradiction_before = fwm.simulate_plan(z_t, plan)
+        total_tension_before = contradiction_before
+        print(f"Found plan with pre-synthesis tension: {total_tension_before:.2f}")
+        
         # Show chosen plan details
         print(f"Chosen plan steps: {len(plan['steps'])}")
         print(f"Total energy required: {plan['total_energy']:.2f}")
@@ -187,14 +232,9 @@ class ScenarioRunner:
         for step in plan['steps']:
             print(f"  - {step['agent_id']} will {step['action']} (Energy: {step['energy_required']:.2f})")
 
-        # Step 4: Calculate total tension from contradictions
-        print("\n⚡ STEP 4: Calculate Contradiction Tension")
-        total_tension_before = contradiction_before
-        print(f"Found plan with pre-synthesis tension: {total_tension_before:.2f}")
-        # (Detailed contradiction list not available for retrieved plan)
-
         # NEW: Simulate the effect of the original plan using FWM
-        print("\n🔮 STEP 5: Simulate Original Plan with FWM")
+        print("\n🔮 STEP 6: Simulate Original Plan with FWM")
+        z_next_before, contradiction_before = fwm.simulate_plan(z_t, plan)
         print(f"Predicted contradiction score: {contradiction_before:.4f}")
         
         # Compute changes in the latent space
@@ -222,8 +262,8 @@ class ScenarioRunner:
             else:
                 print("Patch vetoed by governance; skipping evaluation.")
         
-        # Step 5: Apply a simple synthesis to mitigate contradictions
-        print("\n🔄 STEP 6: Apply Synthesis")
+        # Step 7: Apply a simple synthesis to mitigate contradictions
+        print("\n🔄 STEP 7: Apply Synthesis")
         
         # Sort steps by energy required (descending)
         steps = sorted(plan['steps'], key=lambda x: x['energy_required'], reverse=True)
@@ -253,7 +293,7 @@ class ScenarioRunner:
             print(f"\nTension reduced by: {tension_reduction:.2f} ({percent_improvement:.1f}%)")
             
             # NEW: Simulate the effect of the modified plan using FWM
-            print("\n🔮 STEP 7: Simulate Modified Plan with FWM")
+            print("\n🔮 STEP 8: Simulate Modified Plan with FWM")
             z_next_after, contradiction_after = fwm.simulate_plan(z_t, plan)
             print(f"Predicted contradiction score: {contradiction_after:.4f}")
             contradiction_reduction = contradiction_before - contradiction_after
@@ -275,11 +315,12 @@ class ScenarioRunner:
         else:
             print("No steps to remove for synthesis.")
 
-        # Step 6: Log the final results
-        print("\n📋 STEP 8: Final Results")
+        # Step 9: Log the final results
+        print("\n📋 STEP 9: Final Results")
         print(f"Final plan has {len(plan['steps'])} steps")
         print(f"Final energy requirement: {plan['total_energy']:.2f}")
         print(f"Final completion time: {plan['estimated_completion_time']} minutes")
+        print(f"Plan arbitration method: {arbitration_method}")
         print("\nSteps:")
         for step in plan['steps']:
             print(f"  - {step['agent_id']} will {step['action']} (Energy: {step['energy_required']:.2f})")
@@ -291,6 +332,7 @@ class ScenarioRunner:
         # Include pre-synthesis energy
         plan_record = plan.copy()
         plan_record["total_energy_before"] = total_tension_before  # misuse field; better track energy, but ok
+        plan_record["arbitration_method"] = arbitration_method
         log_episode(
             scenario_name="simple",
             inputs=inputs,
@@ -503,9 +545,14 @@ class ScenarioRunner:
     
     def run_scenario(self, scenario_num_or_title):
         """Run a scenario by number or title using ScenarioLoader."""
+        # Handle "simple" scenario explicitly
+        if scenario_num_or_title == "simple":
+            self.run_simplified_demo()
+            return
+            
         # Attempt to load predefined scenario
         scenario = load_scenario(scenario_num_or_title)
-        if scenario:
+        if (scenario):
             self._run_loaded_scenario(scenario_num_or_title, scenario)
             return
         # Fallback: existing scenarios
@@ -570,11 +617,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="SAAF-OS Demo Runner")
     parser.add_argument("--scenario", type=str, default="simple", 
                         help="Scenario number, title, 'simple', or 'all'")
+    parser.add_argument("--planner_strategy", type=str, default="auto", 
+                        choices=["auto", "retrieved", "distilled", "rl", "manual"],
+                        help="Strategy for plan selection (default: auto)")
     args = parser.parse_args()
 
     logger.info("Starting SAAF-OS demo")
     try:
-        runner = ScenarioRunner()
+        runner = ScenarioRunner(planner_strategy=args.planner_strategy)
         if args.scenario == "all":
             # Run our simplified demo first
             runner.run_simplified_demo()
