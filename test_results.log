@@ -1,0 +1,267 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.11.9, pytest-8.3.5, pluggy-1.5.0 -- /usr/local/bin/python3
+cachedir: .pytest_cache
+metadata: {'Python': '3.11.9', 'Platform': 'macOS-12.7.6-x86_64-i386-64bit', 'Packages': {'pytest': '8.3.5', 'pluggy': '1.5.0'}, 'Plugins': {'json-report': '1.5.0', 'metadata': '3.1.1'}}
+rootdir: /Users/aarondartt/Desktop/repos/SAAF-OS
+plugins: json-report-1.5.0, metadata-3.1.1
+collecting ... collected 108 items
+
+tests/scenarios/test_scenario_loader.py::test_list_scenarios PASSED      [  0%]
+tests/scenarios/test_scenario_loader.py::test_get_scenario_by_number PASSED [  1%]
+tests/scenarios/test_scenario_loader.py::test_get_scenario_by_title PASSED [  2%]
+tests/scenarios/test_scenario_loader.py::test_get_misaligned_labor_plan PASSED [  3%]
+tests/test_contradiction_engine.py::TestNode::test_initialization PASSED [  4%]
+tests/test_contradiction_engine.py::TestEdge::test_initialization PASSED [  5%]
+tests/test_contradiction_engine.py::TestEdge::test_update_tension PASSED [  6%]
+tests/test_contradiction_engine.py::TestContradictionGraph::test_add_edge PASSED [  7%]
+tests/test_contradiction_engine.py::TestContradictionGraph::test_add_node PASSED [  8%]
+tests/test_contradiction_engine.py::TestContradictionGraph::test_get_edge_between PASSED [  9%]
+tests/test_contradiction_engine.py::TestContradictionGraph::test_get_high_tension_edges PASSED [ 10%]
+tests/test_contradiction_engine.py::TestContradictionGraph::test_update_edge_tension PASSED [ 11%]
+tests/test_contradiction_engine.py::TestSynthesisPlan::test_add_action PASSED [ 12%]
+tests/test_contradiction_engine.py::TestSynthesisPlan::test_initialization PASSED [ 12%]
+tests/test_contradiction_engine.py::TestSynthesisPlan::test_set_synthesis_path PASSED [ 13%]
+tests/test_contradiction_engine.py::TestSynthesisPlan::test_set_tension_diff PASSED [ 14%]
+tests/test_contradiction_engine.py::TestSynthesisPlan::test_to_dict PASSED [ 15%]
+tests/test_contradiction_engine.py::TestContradictionEngine::test_detect_contradictions FAILED [ 16%]
+tests/test_contradiction_engine.py::TestContradictionEngine::test_evaluate_praxis_outcome PASSED [ 17%]
+tests/test_contradiction_engine.py::TestContradictionEngine::test_resolve_contradiction PASSED [ 18%]
+tests/test_fwm.py::TestState::test_distance PASSED                       [ 19%]
+tests/test_fwm.py::TestState::test_equality PASSED                       [ 20%]
+tests/test_fwm.py::TestState::test_from_tensor PASSED                    [ 21%]
+tests/test_fwm.py::TestState::test_initialization PASSED                 [ 22%]
+tests/test_fwm.py::TestState::test_to_tensor PASSED                      [ 23%]
+tests/test_fwm.py::TestAction::test_continuous_action PASSED             [ 24%]
+tests/test_fwm.py::TestAction::test_discrete_action PASSED               [ 25%]
+tests/test_fwm.py::TestAction::test_from_tensor PASSED                   [ 25%]
+tests/test_fwm.py::TestAction::test_initialization PASSED                [ 26%]
+tests/test_fwm.py::TestAction::test_to_tensor PASSED                     [ 27%]
+tests/test_fwm.py::TestTrajectory::test_add_transition PASSED            [ 28%]
+tests/test_fwm.py::TestTrajectory::test_cumulative_reward PASSED         [ 29%]
+tests/test_fwm.py::TestTrajectory::test_discounted_reward PASSED         [ 30%]
+tests/test_fwm.py::TestTrajectory::test_initialization PASSED            [ 31%]
+tests/test_fwm.py::TestTrajectory::test_to_dataset PASSED                [ 32%]
+tests/test_fwm.py::TestFWMConfig::test_custom_initialization PASSED      [ 33%]
+tests/test_fwm.py::TestFWMConfig::test_initialization PASSED             [ 34%]
+tests/test_fwm.py::TestForwardWorldModel::test_evaluate_mse PASSED       [ 35%]
+tests/test_fwm.py::TestForwardWorldModel::test_from_config PASSED        [ 36%]
+tests/test_fwm.py::TestForwardWorldModel::test_initialization FAILED     [ 37%]
+tests/test_fwm.py::TestForwardWorldModel::test_load_model PASSED         [ 37%]
+tests/test_fwm.py::TestForwardWorldModel::test_predict_next_state FAILED [ 38%]
+tests/test_fwm.py::TestForwardWorldModel::test_prediction_error_metrics PASSED [ 39%]
+tests/test_fwm.py::TestForwardWorldModel::test_save_model FAILED         [ 40%]
+tests/test_fwm.py::TestForwardWorldModel::test_simulate_trajectory FAILED [ 41%]
+tests/test_fwm.py::TestForwardWorldModel::test_train FAILED              [ 42%]
+tests/test_fwm.py::test_simulate_plan_dimensions PASSED                  [ 43%]
+tests/test_fwm.py::test_simulate_plan_predictability FAILED              [ 44%]
+tests/test_fwm.py::test_contradiction_score_energy_correlation FAILED    [ 45%]
+tests/test_fwm.py::test_batch_simulate_plans PASSED                      [ 46%]
+tests/test_fwm.py::test_compare_plans PASSED                             [ 47%]
+tests/test_memory_manager.py::test_episodic_crud PASSED                  [ 48%]
+tests/test_memory_manager.py::test_semantic_triple_store PASSED          [ 49%]
+tests/test_memory_manager.py::test_patch_history_log PASSED              [ 50%]
+tests/test_message_bus.py::TestMessageBusAdapter::test_get_message_history PASSED [ 50%]
+tests/test_message_bus.py::TestMessageBusAdapter::test_initialization PASSED [ 51%]
+tests/test_message_bus.py::TestMessageBusAdapter::test_publish PASSED    [ 52%]
+tests/test_message_bus.py::TestMessageBusAdapter::test_subscribe_and_callback FAILED [ 53%]
+tests/test_message_bus.py::TestMessageBusAdapter::test_unsubscribe FAILED [ 54%]
+tests/test_message_bus.py::TestMessageBusFactory::test_get_adapter PASSED [ 55%]
+tests/test_message_bus.py::TestMessageBusFactory::test_shutdown_all PASSED [ 56%]
+tests/test_rl_planner.py::TestRLConfig::test_custom_initialization FAILED [ 57%]
+tests/test_rl_planner.py::TestRLConfig::test_initialization FAILED       [ 58%]
+tests/test_rl_planner.py::TestMCTSNode::test_expand FAILED               [ 59%]
+tests/test_rl_planner.py::TestMCTSNode::test_initialization FAILED       [ 60%]
+tests/test_rl_planner.py::TestMCTSNode::test_select_child FAILED         [ 61%]
+tests/test_rl_planner.py::TestMCTSNode::test_ucb_score FAILED            [ 62%]
+tests/test_rl_planner.py::TestMCTSNode::test_update FAILED               [ 62%]
+tests/test_rl_planner.py::TestMCTSNode::test_value PASSED                [ 63%]
+tests/test_rl_planner.py::TestMCTS::test_contradiction_guided_search FAILED [ 64%]
+tests/test_rl_planner.py::TestMCTS::test_initialization FAILED           [ 65%]
+tests/test_rl_planner.py::TestMCTS::test_search_with_contradictions FAILED [ 66%]
+tests/test_rl_planner.py::TestRLPlanner::test_hybrid_decision_making FAILED [ 67%]
+tests/test_rl_planner.py::TestRLPlanner::test_initialization FAILED      [ 68%]
+tests/test_rl_planner.py::TestRLPlanner::test_plan_with_high_contradiction FAILED [ 69%]
+tests/test_rl_planner.py::TestRLPlanner::test_plan_with_low_contradiction FAILED [ 70%]
+tests/test_rsi.py::TestPatch::test_from_dict PASSED                      [ 71%]
+tests/test_rsi.py::TestPatch::test_initialization PASSED                 [ 72%]
+tests/test_rsi.py::TestPatch::test_to_dict PASSED                        [ 73%]
+tests/test_rsi.py::TestRSIEngine::test_apply_patch PASSED                [ 74%]
+tests/test_rsi.py::TestRSIEngine::test_generate_patch PASSED             [ 75%]
+tests/test_rsi.py::TestRSIEngine::test_handle_governance_approval PASSED [ 75%]
+tests/test_rsi.py::TestRSIEngine::test_handle_governance_rejection PASSED [ 76%]
+tests/test_rsi.py::TestRSIEngine::test_handle_governance_veto PASSED     [ 77%]
+tests/test_rsi.py::TestRSIEngine::test_initialization PASSED             [ 78%]
+tests/test_rsi.py::TestRSIEngine::test_propose_patch PASSED              [ 79%]
+tests/test_rsi.py::TestRSIEngine::test_rollback_patch PASSED             [ 80%]
+tests/test_rsi.py::TestRSIEngine::test_veto_and_rollback_scenario PASSED [ 81%]
+tests/test_rsi.py::TestDummyRSIEngine::test_generate_deterministic_patch PASSED [ 82%]
+tests/test_rsi.py::test_patch_signature_valid PASSED                     [ 83%]
+tests/test_rsi.py::test_patch_signature_tampered PASSED                  [ 84%]
+tests/test_rsi.py::test_critical_patch_requires_two_signatures PASSED    [ 85%]
+tests/test_rsi.py::test_critical_patch_missing_second_signature PASSED   [ 86%]
+tests/test_rsi_rollback_audit.py::TestBlobStore::test_content_addressing PASSED [ 87%]
+tests/test_rsi_rollback_audit.py::TestBlobStore::test_nonexistent_blob PASSED [ 87%]
+tests/test_rsi_rollback_audit.py::TestBlobStore::test_store_and_retrieve_blob PASSED [ 88%]
+tests/test_rsi_rollback_audit.py::TestRSIRollback::test_get_rollback_status PASSED [ 89%]
+tests/test_rsi_rollback_audit.py::TestRSIRollback::test_rollback_patch PASSED [ 90%]
+tests/test_rsi_rollback_audit.py::TestRSIRollback::test_rollback_with_multiple_versions PASSED [ 91%]
+tests/test_rsi_rollback_audit.py::TestAuditLog::test_event_chain_integrity PASSED [ 92%]
+tests/test_rsi_rollback_audit.py::TestAuditLog::test_filter_events_by_time PASSED [ 93%]
+tests/test_rsi_rollback_audit.py::TestAuditLog::test_filter_events_by_type PASSED [ 94%]
+tests/test_rsi_rollback_audit.py::TestAuditLog::test_log_event PASSED    [ 95%]
+tests/test_rsi_rollback_audit.py::TestIntegration::test_governance_lifecycle_with_audit PASSED [ 96%]
+tests/test_rsi_rollback_audit.py::TestIntegration::test_nested_dependency_rollback PASSED [ 97%]
+tests/test_uls_encoder.py::test_encode_state PASSED                      [ 98%]
+tests/test_uls_encoder.py::test_encode_state_deterministic PASSED        [ 99%]
+tests/test_uls_encoder.py::test_encode_state_with_different_inputs PASSED [100%]
+
+=================================== FAILURES ===================================
+______________ TestContradictionEngine.test_detect_contradictions ______________
+tests/test_contradiction_engine.py:293: in test_detect_contradictions
+    self.assertEqual(value_edge.contradiction_type, "antagonistic")
+E   AssertionError: 'non-antagonistic' != 'antagonistic'
+E   - non-antagonistic
+E   ? ----
+E   + antagonistic
+__________________ TestForwardWorldModel.test_initialization ___________________
+tests/test_fwm.py:326: in test_initialization
+    self.assertEqual(self.model.state_dim, self.state_dim)
+E   AssertionError: None != 3
+________________ TestForwardWorldModel.test_predict_next_state _________________
+tests/test_fwm.py:362: in test_predict_next_state
+    next_state = self.model.predict_next_state(state, action)
+modules/world_model/fwm.py:628: in predict_next_state
+    z_next, _, _ = dynamics_model.predict_next_state(state.z_t, action)
+/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/torch/nn/modules/module.py:1688: in __getattr__
+    raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+E   AttributeError: 'FWMDynamicsModel' object has no attribute 'predict_next_state'
+____________________ TestForwardWorldModel.test_save_model _____________________
+tests/test_fwm.py:340: in test_save_model
+    mock_save.assert_called_once()
+/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/unittest/mock.py:918: in assert_called_once
+    raise AssertionError(msg)
+E   AssertionError: Expected 'save' to have been called once. Called 0 times.
+________________ TestForwardWorldModel.test_simulate_trajectory ________________
+tests/test_fwm.py:379: in test_simulate_trajectory
+    trajectory = self.model.simulate_trajectory(initial_state, actions, reward_function)
+modules/world_model/fwm.py:635: in simulate_trajectory
+    next_state = self.predict_next_state(states[-1], action)
+modules/world_model/fwm.py:628: in predict_next_state
+    z_next, _, _ = dynamics_model.predict_next_state(state.z_t, action)
+/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/torch/nn/modules/module.py:1688: in __getattr__
+    raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+E   AttributeError: 'FWMDynamicsModel' object has no attribute 'predict_next_state'
+_______________________ TestForwardWorldModel.test_train _______________________
+tests/test_fwm.py:401: in test_train
+    self.assertEqual(mock_train_step.call_count, 5)
+E   AssertionError: 0 != 5
+______________________ test_simulate_plan_predictability _______________________
+tests/test_fwm.py:529: in test_simulate_plan_predictability
+    assert contradiction_high > contradiction_low
+E   assert 0.0 > 0.0
+_________________ test_contradiction_score_energy_correlation __________________
+tests/test_fwm.py:552: in test_contradiction_score_energy_correlation
+    assert contradiction_scores[i] > contradiction_scores[i-1]
+E   assert 0.0 > 0.0
+______________ TestMessageBusAdapter.test_subscribe_and_callback _______________
+/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/unittest/mock.py:1375: in patched
+    with self.decoration_helper(patched,
+/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/unittest/mock.py:1357: in decoration_helper
+    arg = exit_stack.enter_context(patching)
+/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:517: in enter_context
+    result = _enter(cm)
+/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/unittest/mock.py:1430: in __enter__
+    self.target = self.getter()
+/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/pkgutil.py:700: in resolve_name
+    mod = importlib.import_module(modname)
+/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+E   ModuleNotFoundError: No module named 'zmq'
+____________________ TestMessageBusAdapter.test_unsubscribe ____________________
+tests/test_message_bus.py:115: in test_unsubscribe
+    self.assertEqual(len(self.adapter.callbacks["test.topic"]), 0)
+E   KeyError: 'test.topic'
+___________________ TestRLConfig.test_custom_initialization ____________________
+tests/test_rl_planner.py:39: in test_custom_initialization
+    config = RLConfig(
+E   TypeError: RLConfig.__init__() got an unexpected keyword argument 'discount_factor'
+_______________________ TestRLConfig.test_initialization _______________________
+tests/test_rl_planner.py:28: in test_initialization
+    self.assertEqual(config.learning_rate, 0.001)
+E   AssertionError: 0.0001 != 0.001
+___________________________ TestMCTSNode.test_expand ___________________________
+tests/test_rl_planner.py:93: in test_expand
+    self.node.expand(action_priors, next_states)
+E   AttributeError: 'MCTSNode' object has no attribute 'expand'
+_______________________ TestMCTSNode.test_initialization _______________________
+tests/test_rl_planner.py:77: in test_initialization
+    self.assertIsNone(self.node.parent)
+E   AttributeError: 'MCTSNode' object has no attribute 'parent'
+________________________ TestMCTSNode.test_select_child ________________________
+tests/test_rl_planner.py:174: in test_select_child
+    self.node.expand(action_priors, next_states)
+E   AttributeError: 'MCTSNode' object has no attribute 'expand'
+_________________________ TestMCTSNode.test_ucb_score __________________________
+tests/test_rl_planner.py:151: in test_ucb_score
+    score = child.ucb_score(exploration_constant=1.0)
+E   AttributeError: 'MCTSNode' object has no attribute 'ucb_score'
+___________________________ TestMCTSNode.test_update ___________________________
+tests/test_rl_planner.py:112: in test_update
+    self.node.update(1.5)
+E   AttributeError: 'MCTSNode' object has no attribute 'update'
+__________________ TestMCTS.test_contradiction_guided_search ___________________
+tests/test_rl_planner.py:198: in setUp
+    self.config = RLConfig(
+E   TypeError: RLConfig.__init__() got an unexpected keyword argument 'num_simulations'
+_________________________ TestMCTS.test_initialization _________________________
+tests/test_rl_planner.py:198: in setUp
+    self.config = RLConfig(
+E   TypeError: RLConfig.__init__() got an unexpected keyword argument 'num_simulations'
+___________________ TestMCTS.test_search_with_contradictions ___________________
+tests/test_rl_planner.py:198: in setUp
+    self.config = RLConfig(
+E   TypeError: RLConfig.__init__() got an unexpected keyword argument 'num_simulations'
+__________________ TestRLPlanner.test_hybrid_decision_making ___________________
+tests/test_rl_planner.py:294: in setUp
+    self.config = RLConfig(
+E   TypeError: RLConfig.__init__() got an unexpected keyword argument 'latent_dim'
+______________________ TestRLPlanner.test_initialization _______________________
+tests/test_rl_planner.py:294: in setUp
+    self.config = RLConfig(
+E   TypeError: RLConfig.__init__() got an unexpected keyword argument 'latent_dim'
+_______________ TestRLPlanner.test_plan_with_high_contradiction ________________
+tests/test_rl_planner.py:294: in setUp
+    self.config = RLConfig(
+E   TypeError: RLConfig.__init__() got an unexpected keyword argument 'latent_dim'
+________________ TestRLPlanner.test_plan_with_low_contradiction ________________
+tests/test_rl_planner.py:294: in setUp
+    self.config = RLConfig(
+E   TypeError: RLConfig.__init__() got an unexpected keyword argument 'latent_dim'
+=========================== short test summary info ============================
+FAILED tests/test_contradiction_engine.py::TestContradictionEngine::test_detect_contradictions
+FAILED tests/test_fwm.py::TestForwardWorldModel::test_initialization - Assert...
+FAILED tests/test_fwm.py::TestForwardWorldModel::test_predict_next_state - At...
+FAILED tests/test_fwm.py::TestForwardWorldModel::test_save_model - AssertionE...
+FAILED tests/test_fwm.py::TestForwardWorldModel::test_simulate_trajectory - A...
+FAILED tests/test_fwm.py::TestForwardWorldModel::test_train - AssertionError:...
+FAILED tests/test_fwm.py::test_simulate_plan_predictability - assert 0.0 > 0.0
+FAILED tests/test_fwm.py::test_contradiction_score_energy_correlation - asser...
+FAILED tests/test_message_bus.py::TestMessageBusAdapter::test_subscribe_and_callback
+FAILED tests/test_message_bus.py::TestMessageBusAdapter::test_unsubscribe - K...
+FAILED tests/test_rl_planner.py::TestRLConfig::test_custom_initialization - T...
+FAILED tests/test_rl_planner.py::TestRLConfig::test_initialization - Assertio...
+FAILED tests/test_rl_planner.py::TestMCTSNode::test_expand - AttributeError: ...
+FAILED tests/test_rl_planner.py::TestMCTSNode::test_initialization - Attribut...
+FAILED tests/test_rl_planner.py::TestMCTSNode::test_select_child - AttributeE...
+FAILED tests/test_rl_planner.py::TestMCTSNode::test_ucb_score - AttributeErro...
+FAILED tests/test_rl_planner.py::TestMCTSNode::test_update - AttributeError: ...
+FAILED tests/test_rl_planner.py::TestMCTS::test_contradiction_guided_search
+FAILED tests/test_rl_planner.py::TestMCTS::test_initialization - TypeError: R...
+FAILED tests/test_rl_planner.py::TestMCTS::test_search_with_contradictions - ...
+FAILED tests/test_rl_planner.py::TestRLPlanner::test_hybrid_decision_making
+FAILED tests/test_rl_planner.py::TestRLPlanner::test_initialization - TypeErr...
+FAILED tests/test_rl_planner.py::TestRLPlanner::test_plan_with_high_contradiction
+FAILED tests/test_rl_planner.py::TestRLPlanner::test_plan_with_low_contradiction
+======================== 24 failed, 84 passed in 4.24s =========================

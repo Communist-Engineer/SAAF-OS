@@ -60,11 +60,10 @@ def simulate_plan(z_t: np.ndarray, plan: Dict) -> Tuple[np.ndarray, float]:
     # Ensure the vector remains normalized
     z_next = z_next / np.linalg.norm(z_next)
     
-    # Calculate contradiction score based on the new state
-    # Lower values in first dimension indicate higher contradiction
-    contradiction_score = 0.5 - z_next[0]
-    
-    # Ensure score is in [0, 1] range
+    # Calculate contradiction score proportional to plan energy
+    # Contradiction score proportional to energy usage
+    contradiction_score = total_energy
+    # Clamp score to [0,1]
     contradiction_score = max(0.0, min(1.0, contradiction_score))
     
     return z_next, contradiction_score
