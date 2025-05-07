@@ -768,12 +768,15 @@ class RLPlanner:
             "action_type": action_result["action"],  # Use the numeric action for test compatibility
             "steps": [
                 {
+                    "id": "step_1",
                     "action": action_result["action_type"],
                     "agent_id": "planner",
-                    "energy": 0.5
+                    "energy_required": 0.5,  # Adding the required energy_required field
+                    "duration": 15  # Adding the duration field for each step
                 }
             ],
             "total_energy": 0.5,
+            "estimated_completion_time": 15,  # Adding the estimated_completion_time field
             "planning_method": action_result["method"],
             "contradiction_level": self._contradiction_scorer(z_t),
             "goal": goal

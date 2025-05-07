@@ -33,6 +33,7 @@ from modules.world_model.fwm import ForwardWorldModel, State, Action
 from modules.planning.rl_planner import RLPlanner, RLConfig
 from modules.planning.plan_arbitrator import select_best_plan
 from bus.adapter import MessageBusAdapter, MessageBusFactory
+from modules.meta.meta_reasoner import MetaReasoner
 
 # Import our simplified implementations
 import modules.uls_encoder as uls_encoder
@@ -88,6 +89,9 @@ class ScenarioRunner:
         self.contradiction_engine = ContradictionEngine()
         self.forward_world_model = ForwardWorldModel(state_dim=encoder_dim, action_dim=32)
         self.planner = RLPlanner(RLConfig(latent_dim=encoder_dim), use_dummy_models=True)
+        
+        # Initialize the MetaReasoner
+        self.meta_reasoner = MetaReasoner()
         
         # Register message handlers
         self._register_message_handlers()
@@ -162,6 +166,20 @@ class ScenarioRunner:
         print(f"Latent Vector Shape: {z_t.shape}")
         print(f"First few dimensions: {z_t[:5].round(3)}")
 
+        # Define initial goal
+        goal = {"target_energy": 0.8, "priority": 0.75,
+                "description": "Complete harvesting and maintenance with efficient energy use",
+                "approach": "Compete for resources to maximize individual field output",
+                "objectives": ["maximize crop yield", "minimize water usage", "ensure task completion"],
+                "subgoals": [
+                    {"description": "Fertilize field 1", "priority": "high"},
+                    {"description": "Harvest field 2", "priority": "medium"},
+                    {"description": "Monitor moisture levels", "priority": "low"}
+                ]}
+        
+        # NEW: Track contradiction history for goal reframing
+        contradiction_history = [0.0, 0.0, 0.0]  # Initialize with zeros
+
         # Step 3: Generate plans using different strategies
         print("\n📝 STEP 3: Generate Plans from Different Sources")
         
@@ -178,8 +196,6 @@ class ScenarioRunner:
         
         # 2. Generate plan using distilled model
         print("\n🧮 Generating plan using distilled model:")
-        goal = {"target_energy": 0.8, "priority": 0.75,
-                "description": "Complete harvesting and maintenance with efficient energy use"}
         result = planner.generate_plan(z_t, goal)
         distilled_plan = result['plan']
         print(f"Generated distilled plan with {len(distilled_plan['steps'])} steps")
@@ -202,9 +218,40 @@ class ScenarioRunner:
         
         # Use the plan arbitration layer to select the best plan
         if self.planner_strategy == 'auto':
-            # Use arbitration layer
+            # Use MetaReasoner to improve plan selection
+            print("\n🧠 Using MetaReasoner to improve plan selection")
+            
+            # Get context from previous episodes to inform meta reasoning
+            historical_context = retrieve_similar_episode(z_t, top_k=5)
+            
+            for plan_idx, (candidate_plan, source) in enumerate(candidate_plans):
+                # Enhanced meta-reasoning with historical context
+                meta_improvement = self.meta_reasoner.evaluate_plan(
+                    z_t, 
+                    candidate_plan, 
+                    historical_context=historical_context,
+                    current_world_state=u_t
+                )
+                print(f"  - {source} plan meta-improvement score: {meta_improvement:.4f}")
+                
+                # Modify the plan score based on meta reasoning
+                if hasattr(candidate_plan, 'score'):
+                    candidate_plan.score *= (1.0 + meta_improvement)
+                else:
+                    # Add a score field if one doesn't exist
+                    candidate_plans[plan_idx] = (candidate_plan, source)
+                    candidate_plan['meta_score'] = meta_improvement
+                    
+                # Have meta-reasoner suggest improvements to the plan
+                improvement_suggestions = self.meta_reasoner.suggest_plan_improvements(candidate_plan, z_t)
+                if improvement_suggestions:
+                    print(f"  - MetaReasoner suggested improvements for {source} plan:")
+                    for suggestion in improvement_suggestions:
+                        print(f"    * {suggestion}")
+            
+            # Use arbitration layer with meta-improved plans
             plan = select_best_plan(z_t, candidate_plans, fwm)
-            arbitration_method = "automatic"
+            arbitration_method = "meta_reasoner"
         else:
             # Manual selection based on planner_strategy
             for p, source in candidate_plans:
@@ -232,10 +279,14 @@ class ScenarioRunner:
         for step in plan['steps']:
             print(f"  - {step['agent_id']} will {step['action']} (Energy: {step['energy_required']:.2f})")
 
-        # NEW: Simulate the effect of the original plan using FWM
+        # Simulate the effect of the original plan using FWM
         print("\n🔮 STEP 6: Simulate Original Plan with FWM")
         z_next_before, contradiction_before = fwm.simulate_plan(z_t, plan)
         print(f"Predicted contradiction score: {contradiction_before:.4f}")
+        
+        # Update contradiction history
+        contradiction_history.pop(0)
+        contradiction_history.append(contradiction_before)
         
         # Compute changes in the latent space
         latent_diff_before = z_next_before - z_t
@@ -245,7 +296,7 @@ class ScenarioRunner:
         for i in top_indices:
             print(f"  - Dim {i}: {z_t[i]:.4f} -> {z_next_before[i]:.4f} (Δ: {latent_diff_before[i]:.4f})")
 
-        # NEW RSI integration: propose, evaluate, and vote on patch
+        # RSI integration: propose, evaluate, and vote on patch
         patch = None
         if contradiction_before > 0.01:
             patch = propose_patch(target="planner")
@@ -262,8 +313,154 @@ class ScenarioRunner:
             else:
                 print("Patch vetoed by governance; skipping evaluation.")
         
-        # Step 7: Apply a simple synthesis to mitigate contradictions
-        print("\n🔄 STEP 7: Apply Synthesis")
+        # NEW: Check if goal reframing is needed based on persistent contradictions
+        print("\n🔄 STEP 7: Dialectical Goal Reframing")
+        print(f"Contradiction history: {[round(c, 2) for c in contradiction_history]}")
+        
+        # Check if goal reframing is needed
+        reframed_goal = self.meta_reasoner.reframe_goal(u_t, z_t, goal, contradiction_history)
+        if reframed_goal:
+            print("Goal reframed due to persistent contradictions!")
+            print("Original goal:")
+            print(json.dumps(goal, indent=2))
+            print("\nReframed goal:")
+            print(json.dumps(reframed_goal, indent=2))
+            
+            # Highlight the specific changes
+            print("\nKey changes in the reframed goal:")
+            
+            # Compare approaches
+            if 'approach' in goal and 'approach' in reframed_goal and goal['approach'] != reframed_goal['approach']:
+                print(f"- Approach changed from:\n  '{goal['approach']}' to\n  '{reframed_goal['approach']}'")
+            
+            # Compare objectives
+            if 'objectives' in goal and 'objectives' in reframed_goal:
+                for i, (old, new) in enumerate(zip(goal['objectives'], reframed_goal['objectives'])):
+                    if old != new:
+                        print(f"- Objective {i+1} changed from '{old}' to '{new}'")
+            
+            # Compare subgoals
+            if 'subgoals' in goal and 'subgoals' in reframed_goal:
+                for i, old_subgoal in enumerate(goal['subgoals']):
+                    # Find matching subgoal in reframed goal
+                    for j, new_subgoal in enumerate(reframed_goal['subgoals']):
+                        if old_subgoal['description'] == new_subgoal['description']:
+                            if old_subgoal.get('priority') != new_subgoal.get('priority'):
+                                print(f"- Subgoal '{old_subgoal['description']}' priority changed: " +
+                                      f"{old_subgoal.get('priority', 'none')} → {new_subgoal.get('priority', 'none')}")
+            
+            # Update the goal for the next planning cycle
+            goal = reframed_goal
+            
+            # Generate a new plan with the reframed goal
+            print("\n🧮 Generating new plan using reframed goal:")
+            result = planner.generate_plan(z_t, goal)
+            plan = result['plan']
+            print(f"Generated plan with {len(plan['steps'])} steps")
+            
+            # Simulate with new plan
+            print("\n🔮 Simulating with reframed goal:")
+            z_next_reframed, contradiction_reframed = fwm.simulate_plan(z_t, plan)
+            
+            # Compare contradiction scores
+            print(f"Contradiction score before reframing: {contradiction_before:.4f}")
+            print(f"Contradiction score after reframing: {contradiction_reframed:.4f}")
+            
+            # Update contradiction history
+            contradiction_history.pop(0)
+            contradiction_history.append(contradiction_reframed)
+            
+            # Ask user if they want to continue iterating
+            continue_iterating = input("\nContinue to iterate? (y/n): ").lower().strip()
+            
+            while continue_iterating == 'y' or continue_iterating == 'yes':
+                print("\n🔄 STEP 8: Additional Dialectical Goal Reframing Iteration")
+                print(f"Current contradiction history: {[round(c, 2) for c in contradiction_history]}")
+                
+                # Check if further goal reframing is needed
+                reframed_goal = self.meta_reasoner.reframe_goal(u_t, z_t, goal, contradiction_history)
+                if reframed_goal and reframed_goal != goal:
+                    print("Goal further reframed due to persistent contradictions!")
+                    print("Previous goal:")
+                    print(json.dumps(goal, indent=2))
+                    print("\nFurther reframed goal:")
+                    print(json.dumps(reframed_goal, indent=2))
+                    
+                    # Highlight the specific changes
+                    print("\nKey changes in the reframed goal:")
+                    
+                    # Compare approaches
+                    if 'approach' in goal and 'approach' in reframed_goal and goal['approach'] != reframed_goal['approach']:
+                        print(f"- Approach changed from:\n  '{goal['approach']}' to\n  '{reframed_goal['approach']}'")
+                    
+                    # Compare objectives
+                    if 'objectives' in goal and 'objectives' in reframed_goal:
+                        for i, (old, new) in enumerate(zip(goal['objectives'], reframed_goal['objectives'])):
+                            if old != new:
+                                print(f"- Objective {i+1} changed from '{old}' to '{new}'")
+                    
+                    # Compare subgoals
+                    if 'subgoals' in goal and 'subgoals' in reframed_goal:
+                        for i, old_subgoal in enumerate(goal['subgoals']):
+                            # Find matching subgoal in reframed goal
+                            for j, new_subgoal in enumerate(reframed_goal['subgoals']):
+                                if old_subgoal['description'] == new_subgoal['description']:
+                                    if old_subgoal.get('priority') != new_subgoal.get('priority'):
+                                        print(f"- Subgoal '{old_subgoal['description']}' priority changed: " +
+                                              f"{old_subgoal.get('priority', 'none')} → {new_subgoal.get('priority', 'none')}")
+                    
+                    # Update the goal for the next planning cycle
+                    goal = reframed_goal
+                    
+                    # Generate a new plan with the reframed goal
+                    print("\n🧮 Generating new plan using further reframed goal:")
+                    result = planner.generate_plan(z_t, goal)
+                    plan = result['plan']
+                    print(f"Generated plan with {len(plan['steps'])} steps")
+                    
+                    # Simulate with new plan
+                    print("\n🔮 Simulating with further reframed goal:")
+                    z_next_reframed, contradiction_reframed = fwm.simulate_plan(z_t, plan)
+                    
+                    # Compare contradiction scores
+                    print(f"Previous contradiction score: {contradiction_history[-1]:.4f}")
+                    print(f"New contradiction score: {contradiction_reframed:.4f}")
+                    
+                    # Update contradiction history
+                    contradiction_history.pop(0)
+                    contradiction_history.append(contradiction_reframed)
+                else:
+                    print("No further significant reframing needed - goal has stabilized.")
+                    break
+                
+                # Ask user if they want to continue iterating
+                continue_iterating = input("\nContinue to iterate? (y/n): ").lower().strip()
+            
+            # Log episode for future learning
+            log_episode({
+                "world_state": u_t,
+                "latent_state": z_t.tolist(),
+                "goal": goal,
+                "plan": plan,
+                "contradiction_score": contradiction_reframed,
+                "contradiction_history": contradiction_history
+            })
+            
+            # Skip the synthesis step if goal reframing already improved things significantly
+            if contradiction_reframed < 0.5 * contradiction_before:
+                print("\n✅ Goal reframing successfully reduced contradictions!")
+                
+                # Final result logging
+                print("\n📋 STEP 9: Final Results")
+                print(f"Final plan has {len(plan['steps'])} steps after goal reframing")
+                print(f"Original contradiction: {contradiction_before:.4f}")
+                print(f"Final contradiction: {contradiction_reframed:.4f}")
+                return
+        else:
+            print("No goal reframing needed or possible at this time.")
+        
+        # Step 8: Apply a simple synthesis to mitigate contradictions
+        print("\n🔄 STEP 8: Apply Synthesis")
         
         # Sort steps by energy required (descending)
         steps = sorted(plan['steps'], key=lambda x: x['energy_required'], reverse=True)
@@ -292,8 +489,8 @@ class ScenarioRunner:
             percent_improvement = (tension_reduction / total_tension_before) * 100 if total_tension_before > 0 else 0
             print(f"\nTension reduced by: {tension_reduction:.2f} ({percent_improvement:.1f}%)")
             
-            # NEW: Simulate the effect of the modified plan using FWM
-            print("\n🔮 STEP 8: Simulate Modified Plan with FWM")
+            # Simulate the effect of the modified plan using FWM
+            print("\n🔮 STEP 9: Simulate Modified Plan with FWM")
             z_next_after, contradiction_after = fwm.simulate_plan(z_t, plan)
             print(f"Predicted contradiction score: {contradiction_after:.4f}")
             contradiction_reduction = contradiction_before - contradiction_after
@@ -315,8 +512,8 @@ class ScenarioRunner:
         else:
             print("No steps to remove for synthesis.")
 
-        # Step 9: Log the final results
-        print("\n📋 STEP 9: Final Results")
+        # Step 10: Log the final results
+        print("\n📋 STEP 10: Final Results")
         print(f"Final plan has {len(plan['steps'])} steps")
         print(f"Final energy requirement: {plan['total_energy']:.2f}")
         print(f"Final completion time: {plan['estimated_completion_time']} minutes")
@@ -325,18 +522,31 @@ class ScenarioRunner:
         for step in plan['steps']:
             print(f"  - {step['agent_id']} will {step['action']} (Energy: {step['energy_required']:.2f})")
             
+        # NEW: Step 10: Update MetaReasoner with plan outcome
+        print("\n🧠 STEP 10: Update MetaReasoner with Plan Outcome")
+        # Calculate execution success score based on reduction in contradictions
+        execution_success_score = 1.0
+        if 'contradiction_before' in locals() and 'contradiction_after' in locals():
+            # Success is higher when contradiction reduction is greater
+            execution_success_score = min(1.0, max(0.0, 1.0 - (contradiction_after / contradiction_before)))
+        
+        # Update MetaReasoner with the outcome of the executed plan
+        self.meta_reasoner.learn_from_outcome(
+            plan=plan,
+            z_t=z_t, 
+            original_world_state=u_t,
+            execution_success=execution_success_score,
+            contradictions_before=contradiction_before,
+            contradictions_after=locals().get('contradiction_after', contradiction_before)
+        )
+        print(f"MetaReasoner updated with execution success score: {execution_success_score:.4f}")
+        
         print("\n" + "="*70)
         # Log this episode to memory
-        # Prepare inputs and plan snapshot
-        inputs = u_t
-        # Include pre-synthesis energy
-        plan_record = plan.copy()
-        plan_record["total_energy_before"] = total_tension_before  # misuse field; better track energy, but ok
-        plan_record["arbitration_method"] = arbitration_method
         log_episode(
-            scenario_name="simple",
-            inputs=inputs,
-            plan=plan_record,
+            scenario_name=scenario_title,
+            inputs=u_t,
+            plan=plan,
             z_t=z_t,
             z_t_prime=z_next_after if 'z_next_after' in locals() else z_next_before,
             pre_score=contradiction_before,
@@ -546,7 +756,7 @@ class ScenarioRunner:
     def run_scenario(self, scenario_num_or_title):
         """Run a scenario by number or title using ScenarioLoader."""
         # Handle "simple" scenario explicitly
-        if scenario_num_or_title == "simple":
+        if (scenario_num_or_title == "simple"):
             self.run_simplified_demo()
             return
             
@@ -611,6 +821,352 @@ class ScenarioRunner:
             "pause": "AgriBot.wait_for_peak_to_pass"
         }
         return action_mapping.get(action_type, "unknown_action")
+
+    def _run_loaded_scenario(self, scenario_title, scenario_dict):
+        """
+        Run a loaded scenario from scenario_dict.
+        
+        Args:
+            scenario_title: Title of the scenario
+            scenario_dict: Dictionary containing scenario data
+        
+        This method:
+        1. Loads u_t, goal, and contradictions from the scenario
+        2. Encodes u_t to get z_t
+        3. Calls the planning → simulation → synthesis → RSI → arbitration pipeline
+        4. Stores results in memory
+        5. Invokes the MetaReasoner feedback
+        6. If dialectical reframing is enabled, loops through additional iterations
+        """
+        print(f"\n{'='*20} Scenario: {scenario_title} {'='*20}")
+        
+        # Step 1: Load scenario components
+        print("\n📊 STEP 1: Load Scenario Components")
+        u_t = scenario_dict.get("world_state", {})
+        goal = scenario_dict.get("goal", {})
+        contradictions = scenario_dict.get("contradictions", [])
+        dialect_reframing = scenario_dict.get("enable_dialectical_reframing", False)
+        
+        print(f"World State: {json.dumps(u_t, indent=2)}")
+        print(f"Goal: {json.dumps(goal, indent=2)}")
+        print(f"Initial Contradictions: {contradictions}")
+        
+        # Step 2: Encode the world state into the latent space
+        print("\n🧠 STEP 2: Encode World State")
+        z_t = uls_encoder.encode_state(u_t)
+        print(f"Latent Vector Shape: {z_t.shape}")
+        print(f"First few dimensions: {z_t[:5].round(3)}")
+        
+        # Track contradiction history for goal reframing
+        contradiction_history = [0.0, 0.0, 0.0]  # Initialize with zeros
+        
+        # Step 3: Generate plans using different strategies
+        print("\n📝 STEP 3: Generate Plans from Different Sources")
+        
+        # 1. Get retrieved plan from memory
+        print("\n📚 Retrieving similar plan from memory:")
+        similar = retrieve_similar_episode(z_t, top_k=3)
+        retrieved_plan = None
+        if similar:
+            ret = similar[0]
+            retrieved_plan = ret['plan']
+            print(f"Retrieved plan with {len(retrieved_plan['steps'])} steps")
+        else:
+            print("🔍 No similar past episodes found.")
+        
+        # 2. Generate plan using distilled model
+        print("\n🧮 Generating plan using distilled model:")
+        result = planner.generate_plan(z_t, goal)
+        distilled_plan = result['plan']
+        print(f"Generated distilled plan with {len(distilled_plan['steps'])} steps")
+        
+        # 3. Generate plan using RL planner
+        print("\n🤖 Generating plan using RL planner:")
+        rl_plan = self.planner.plan(z_t=z_t, goal=goal)
+        print(f"Generated RL plan with {len(rl_plan.get('steps', [])) if rl_plan else 0} steps")
+        
+        # Step 4: Select the best plan using our arbitration layer
+        print("\n🏆 STEP 4: Select Best Plan")
+        
+        # Only include plans that were successfully generated
+        candidate_plans = [
+            (retrieved_plan, "retrieved") if retrieved_plan else None,
+            (distilled_plan, "distilled"),
+            (rl_plan, "rl") if rl_plan else None
+        ]
+        candidate_plans = [plan for plan in candidate_plans if plan is not None]
+        
+        # Use the plan arbitration layer to select the best plan
+        if self.planner_strategy == 'auto':
+            # Use MetaReasoner to improve plan selection
+            print("\n🧠 Using MetaReasoner to improve plan selection")
+            
+            # Get context from previous episodes to inform meta reasoning
+            historical_context = retrieve_similar_episode(z_t, top_k=5)
+            
+            for plan_idx, (candidate_plan, source) in enumerate(candidate_plans):
+                # Enhanced meta-reasoning with historical context
+                meta_improvement = self.meta_reasoner.evaluate_plan(
+                    z_t, 
+                    candidate_plan, 
+                    historical_context=historical_context,
+                    current_world_state=u_t
+                )
+                print(f"  - {source} plan meta-improvement score: {meta_improvement:.4f}")
+                
+                # Modify the plan score based on meta reasoning
+                if hasattr(candidate_plan, 'score'):
+                    candidate_plan.score *= (1.0 + meta_improvement)
+                else:
+                    # Add a score field if one doesn't exist
+                    candidate_plans[plan_idx] = (candidate_plan, source)
+                    candidate_plan['meta_score'] = meta_improvement
+                    
+                # Have meta-reasoner suggest improvements to the plan
+                improvement_suggestions = self.meta_reasoner.suggest_plan_improvements(candidate_plan, z_t)
+                if improvement_suggestions:
+                    print(f"  - MetaReasoner suggested improvements for {source} plan:")
+                    for suggestion in improvement_suggestions:
+                        print(f"    * {suggestion}")
+            
+            # Use arbitration layer with meta-improved plans
+            plan = select_best_plan(z_t, candidate_plans, fwm)
+            arbitration_method = "meta_reasoner"
+        else:
+            # Manual selection based on planner_strategy
+            for p, source in candidate_plans:
+                if source == self.planner_strategy:
+                    plan = p
+                    print(f"\n✅ Manually selected: {source}_plan")
+                    arbitration_method = "manual"
+                    break
+            else:
+                # Fallback to the first available plan if requested strategy not available
+                plan = candidate_plans[0][0]
+                print(f"\n⚠️ Requested planner '{self.planner_strategy}' not available, using {candidate_plans[0][1]} instead")
+                arbitration_method = "fallback"
+        
+        # Step 5: Calculate total tension from contradictions
+        print("\n⚡ STEP 5: Calculate Contradiction Tension")
+        _, contradiction_before = fwm.simulate_plan(z_t, plan)
+        total_tension_before = contradiction_before
+        print(f"Found plan with pre-synthesis tension: {total_tension_before:.2f}")
+        
+        # Show chosen plan details
+        print(f"Chosen plan steps: {len(plan['steps'])}")
+        print(f"Total energy required: {plan['total_energy']:.2f}")
+        print("Steps:")
+        for step in plan['steps']:
+            print(f"  - {step['agent_id']} will {step['action']} (Energy: {step['energy_required']:.2f})")
+        
+        # Simulate the effect of the original plan using FWM
+        print("\n🔮 STEP 6: Simulate Original Plan with FWM")
+        z_next_before, contradiction_before = fwm.simulate_plan(z_t, plan)
+        print(f"Predicted contradiction score: {contradiction_before:.4f}")
+        
+        # Update contradiction history
+        contradiction_history.pop(0)
+        contradiction_history.append(contradiction_before)
+        
+        # Compute changes in the latent space
+        latent_diff_before = z_next_before - z_t
+        print(f"Top latent dimension changes:")
+        # Get the indices of the top 3 changes by magnitude
+        top_indices = np.argsort(np.abs(latent_diff_before))[-3:]
+        for i in top_indices:
+            print(f"  - Dim {i}: {z_t[i]:.4f} -> {z_next_before[i]:.4f} (Δ: {latent_diff_before[i]:.4f})")
+        
+        # RSI integration: propose, evaluate, and vote on patch
+        patch = None
+        if contradiction_before > 0.01:
+            patch = propose_patch(target="planner")
+            print(f"RSI proposed patch: {patch}")
+        else:
+            print("RSI: No patch proposed (contradiction below threshold)")
+        
+        if patch:
+            accepted = governance_vote(patch)
+            print(f"Governance vote: {'accepted' if accepted else 'vetoed'}")
+            if accepted:
+                improved = evaluate_patch(patch)
+                print(f"Patch evaluation: {'improved scores' if improved else 'no improvement'}")
+            else:
+                print("Patch vetoed by governance; skipping evaluation.")
+        
+        # Check if goal reframing is needed based on persistent contradictions
+        print("\n🔄 STEP 7: Dialectical Goal Reframing")
+        print(f"Contradiction history: {[round(c, 2) for c in contradiction_history]}")
+        
+        # Goal reframing is only performed if enabled for this scenario
+        if dialect_reframing:
+            # Check if goal reframing is needed
+            reframed_goal = self.meta_reasoner.reframe_goal(u_t, z_t, goal, contradiction_history)
+            if reframed_goal:
+                print("Goal reframed due to persistent contradictions!")
+                print("Original goal:")
+                print(json.dumps(goal, indent=2))
+                print("\nReframed goal:")
+                print(json.dumps(reframed_goal, indent=2))
+                
+                # Highlight the specific changes
+                print("\nKey changes in the reframed goal:")
+                
+                # Compare approaches
+                if 'approach' in goal and 'approach' in reframed_goal and goal['approach'] != reframed_goal['approach']:
+                    print(f"- Approach changed from:\n  '{goal['approach']}' to\n  '{reframed_goal['approach']}'")
+                
+                # Compare objectives
+                if 'objectives' in goal and 'objectives' in reframed_goal:
+                    for i, (old, new) in enumerate(zip(goal['objectives'], reframed_goal['objectives'])):
+                        if old != new:
+                            print(f"- Objective {i+1} changed from '{old}' to '{new}'")
+                
+                # Compare subgoals
+                if 'subgoals' in goal and 'subgoals' in reframed_goal:
+                    for i, old_subgoal in enumerate(goal['subgoals']):
+                        # Find matching subgoal in reframed goal
+                        for j, new_subgoal in enumerate(reframed_goal['subgoals']):
+                            if old_subgoal['description'] == new_subgoal['description']:
+                                if old_subgoal.get('priority') != new_subgoal.get('priority'):
+                                    print(f"- Subgoal '{old_subgoal['description']}' priority changed: " +
+                                          f"{old_subgoal.get('priority', 'none')} → {new_subgoal.get('priority', 'none')}")
+                
+                # Update the goal for the next planning cycle
+                goal = reframed_goal
+                
+                # Generate a new plan with the reframed goal
+                print("\n🧮 Generating new plan using reframed goal:")
+                result = planner.generate_plan(z_t, goal)
+                plan = result['plan']
+                print(f"Generated plan with {len(plan['steps'])} steps")
+                
+                # Simulate with new plan
+                print("\n🔮 Simulating with reframed goal:")
+                z_next_reframed, contradiction_reframed = fwm.simulate_plan(z_t, plan)
+                
+                # Compare contradiction scores
+                print(f"Contradiction score before reframing: {contradiction_before:.4f}")
+                print(f"Contradiction score after reframing: {contradiction_reframed:.4f}")
+                
+                # Update contradiction history
+                contradiction_history.pop(0)
+                contradiction_history.append(contradiction_reframed)
+                
+                # Additional dialectical reframing iterations
+                iterations = 0
+                max_iterations = scenario_dict.get("max_reframing_iterations", 2)
+                
+                while iterations < max_iterations and contradiction_history[-1] > 0.1:
+                    iterations += 1
+                    print(f"\n🔄 STEP 8.{iterations}: Additional Dialectical Goal Reframing Iteration")
+                    print(f"Current contradiction history: {[round(c, 2) for c in contradiction_history]}")
+                    
+                    # Check if further goal reframing is needed
+                    reframed_goal = self.meta_reasoner.reframe_goal(u_t, z_t, goal, contradiction_history)
+                    if (reframed_goal and reframed_goal != goal):
+                        print("Goal further reframed due to persistent contradictions!")
+                        print("Previous goal:")
+                        print(json.dumps(goal, indent=2))
+                        print("\nFurther reframed goal:")
+                        print(json.dumps(reframed_goal, indent=2))
+                        
+                        # Update the goal for the next planning cycle
+                        goal = reframed_goal
+                        
+                        # Generate a new plan with the reframed goal
+                        print("\n🧮 Generating new plan using further reframed goal:")
+                        result = planner.generate_plan(z_t, goal)
+                        plan = result['plan']
+                        print(f"Generated plan with {len(plan['steps'])} steps")
+                        
+                        # Simulate with new plan
+                        print("\n🔮 Simulating with further reframed goal:")
+                        z_next_reframed, contradiction_reframed = fwm.simulate_plan(z_t, plan)
+                        
+                        # Compare contradiction scores
+                        print(f"Previous contradiction score: {contradiction_history[-1]:.4f}")
+                        print(f"New contradiction score: {contradiction_reframed:.4f}")
+                        
+                        # Update contradiction history
+                        contradiction_history.pop(0)
+                        contradiction_history.append(contradiction_reframed)
+                    else:
+                        print("No further significant reframing needed - goal has stabilized.")
+                        break
+            else:
+                print("No goal reframing needed or possible at this time.")
+        else:
+            print("Dialectical goal reframing is disabled for this scenario.")
+        
+        # Step 8: Apply synthesis to mitigate contradictions
+        print("\n🔄 STEP 8: Apply Synthesis")
+        
+        # Sort steps by energy required (descending)
+        steps = sorted(plan['steps'], key=lambda x: x['energy_required'], reverse=True)
+        
+        # Simple synthesis: remove the most energy-intensive step
+        if steps:
+            removed_step = steps[0]
+            plan['steps'] = [s for s in plan['steps'] if s['id'] != removed_step['id']]
+            plan['total_energy'] -= removed_step['energy_required']
+            plan['estimated_completion_time'] -= removed_step['duration']
+            
+            print(f"Synthesis applied: Removed step '{removed_step['id']}' ({removed_step['action']}) by {removed_step['agent_id']}")
+            print(f"Energy saved: {removed_step['energy_required']:.2f}")
+            
+            # Simulate the effect of the modified plan using FWM
+            print("\n🔮 STEP 9: Simulate Modified Plan with FWM")
+            z_next_after, contradiction_after = fwm.simulate_plan(z_t, plan)
+            print(f"Predicted contradiction score: {contradiction_after:.4f}")
+            contradiction_reduction = contradiction_before - contradiction_after
+            percent_contradiction_improvement = (contradiction_reduction / contradiction_before) * 100 if contradiction_before > 0 else 0
+            print(f"Contradiction reduced by: {contradiction_reduction:.4f} ({percent_contradiction_improvement:.1f}%)")
+        else:
+            print("No steps to remove for synthesis.")
+            contradiction_after = contradiction_before
+        
+        # Step 9: Log the final results
+        print("\n📋 STEP 10: Final Results")
+        print(f"Final plan has {len(plan['steps'])} steps")
+        print(f"Final energy requirement: {plan['total_energy']:.2f}")
+        print(f"Final completion time: {plan['estimated_completion_time']} minutes")
+        print(f"Plan arbitration method: {arbitration_method}")
+        print("\nSteps:")
+        for step in plan['steps']:
+            print(f"  - {step['agent_id']} will {step['action']} (Energy: {step['energy_required']:.2f})")
+        
+        # Step 10: Update MetaReasoner with plan outcome
+        print("\n🧠 STEP 10: Update MetaReasoner with Plan Outcome")
+        # Calculate execution success score based on reduction in contradictions
+        execution_success_score = 1.0
+        if contradiction_before > 0:
+            execution_success_score = min(1.0, max(0.0, 1.0 - (contradiction_after / contradiction_before)))
+        
+        # Update MetaReasoner with the outcome of the executed plan
+        self.meta_reasoner.learn_from_outcome(
+            plan=plan,
+            z_t=z_t, 
+            original_world_state=u_t,
+            execution_success=execution_success_score,
+            contradictions_before=contradiction_before,
+            contradictions_after=contradiction_after
+        )
+        print(f"MetaReasoner updated with execution success score: {execution_success_score:.4f}")
+        
+        print("\n" + "="*70)
+        # Log this episode to memory
+        log_episode(
+            scenario_name=scenario_title,
+            inputs=u_t,
+            plan=plan,
+            z_t=z_t,
+            z_t_prime=z_next_after if 'z_next_after' in locals() else z_next_before,
+            pre_score=contradiction_before,
+            post_score=locals().get('contradiction_after', contradiction_before),
+            rsi_patch=patch,
+            accepted=locals().get('accepted', False)
+        )
+        print(f"Episode logged to memory/episodes.jsonl")
 
 
 if __name__ == "__main__":

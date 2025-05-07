@@ -34,6 +34,11 @@ def stress_scenarios(runs_per_scenario: int = 3):
             z_t = uls_encoder.encode_state(u_t)
             result = planner.generate_plan(z_t, scenario['goal'])
             plan = result['plan']
+            
+            # Get contradiction scores from the result dictionary
+            contradiction_before = result.get('contradiction_before', 0)
+            contradiction_after = result.get('contradiction_after', 0)
+            
             # initial tension from scenario definitions
             pre_tension = sum(t for _, _, t in scenario['contradictions'])
             # memory retrieval and plan comparison
@@ -65,7 +70,7 @@ def stress_scenarios(runs_per_scenario: int = 3):
             tensions.append(pre_tension - post_tension)
             energy_savings.append(energy_before - energy_after)
             # RSI
-            if pre_score > 0.01:
+            if contradiction_before > 0.01:  # Using contradiction_before instead of pre_score
                 total_rsi += 1
                 patch = propose_patch(target='planner')
                 if governance_vote(patch):
@@ -92,6 +97,15 @@ def stress_scenarios(runs_per_scenario: int = 3):
             f"{name:<20} {m['avg_tension_reduction']:>10.3f} {m['avg_energy_saving']:>10.3f} "
             f"{m['rsi_success_rate']:>8.1f} {m['memory_reuse_rate']:>8.1f} {m['avg_memory_delta']:>8.3f}"
         )
+    
+    # Print overall averages
+    print("\nOverall Averages:")
+    avg_tension = np.mean([m['avg_tension_reduction'] for m in summary.values()])
+    avg_energy = np.mean([m['avg_energy_saving'] for m in summary.values()])
+    avg_rsi = np.mean([m['rsi_success_rate'] for m in summary.values()])
+    print(f"Average Tension Reduction: {avg_tension:.3f}")
+    print(f"Average Energy Savings: {avg_energy:.3f}")
+    print(f"Average RSI Patch Success Rate: {avg_rsi:.2f}%")
 
 if __name__ == '__main__':
     stress_scenarios()
