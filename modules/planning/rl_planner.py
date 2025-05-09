@@ -20,6 +20,13 @@ logging.basicConfig(level=logging.INFO,
                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("RLPlanner")
 
+from losses.contradiction_loss import ContradictionLoss
+
+logger = logging.getLogger(__name__)
+# Configure basic logging if not already configured by the application
+if not logger.handlers:
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
 
 class PolicyNetwork(nn.Module):
     """
@@ -99,6 +106,10 @@ class RLConfig:
     num_simulations: int = 100
     action_space_size: int = 4
     batch_size: int = 32
+    contradiction_loss_config: Optional[Dict[str, float]] = None
+    value_vector_weights: Optional[List[float]] = None
+    value_vector_indices: Optional[List[int]] = None
+    mcts_contradiction_bias_weight: float = -0.5
 
 
 class MCTSNode:
@@ -126,6 +137,8 @@ class MCTSNode:
         
         self.reward = 0.0  # Immediate reward for reaching this node
         self.contradiction_score = 0.0  # L_contradiction score
+        self.L_contradiction_val: Optional[float] = None
+        self.L_contradiction_components: Optional[Dict[str, float]] = None
     
     def expand(self, action_priors, next_states):
         """
@@ -212,7 +225,7 @@ class MCTS:
     Monte Carlo Tree Search in latent space as specified in rl_loop_spec.md.
     """
     
-    def __init__(self, config, fwm):
+    def __init__(self, config, fwm, policy_network, planner_ref):
         """
         Initialize the MCTS.
         
@@ -222,6 +235,10 @@ class MCTS:
         """
         self.config = config
         self.fwm = fwm
+        self.policy_network = policy_network
+        self.planner_ref = planner_ref
+        self.action_space_size = config.action_space_size
+        self.simulated_next_state_contradictions: List[float] = [] # For logging
 
     def search(self, initial_state, contradiction_level=0.5):
         """
@@ -509,6 +526,43 @@ class DummyForwardModel:
         
         return next_state, reward
 
+    def simulate(self, action_seq: List[int], z_t: np.ndarray, horizon: int) -> List[np.ndarray]:
+        """Simulates a sequence of actions from state z_t for a given horizon."""
+        if not action_seq:
+            logger.warning("DummyFWM.simulate: Empty action sequence provided.")
+            return []
+        
+        current_z = z_t.copy()
+        trajectory_next_states = []
+
+        for h_step in range(horizon):
+            if h_step >= len(action_seq):
+                # If horizon is longer than action sequence, take the last action repeatedly or a default one.
+                # For simplicity, using the last action.
+                action = action_seq[-1]
+                logger.debug(f"DummyFWM.simulate: Horizon {h_step+1}, reusing last action {action}.")
+            else:
+                action = action_seq[h_step]
+            
+            # Use a simplified version of __call__ for next state generation, ignore its reward part.
+            np.random.seed(hash(str(action) + str(current_z.tolist())) % (2**32))
+            perturbation = np.random.randn(self.latent_dim) * 0.1
+            action_effect = np.zeros(self.latent_dim)
+            if self.latent_dim > action:
+                 action_effect[action % self.latent_dim] = (action % 2 - 0.5) * 0.2 
+            else:
+                 action_effect[0] = (action % 2 - 0.5) * 0.2
+            
+            next_z = current_z + perturbation + action_effect
+            if np.linalg.norm(next_z) > 0:
+                next_z = next_z / np.linalg.norm(next_z)
+            
+            trajectory_next_states.append(next_z)
+            current_z = next_z
+            
+        logger.debug(f"DummyFWM.simulate: z_t(f3)={z_t[:3]}, actions={action_seq}, H={horizon} -> traj_len={len(trajectory_next_states)}")
+        return trajectory_next_states
+
 
 class DummyPolicyNetwork:
     """
@@ -587,7 +641,7 @@ class RLPlanner:
             self.fwm = DummyForwardModel(self.latent_dim)
         
         # Initialize MCTS
-        self.mcts = MCTS(self.config, self.fwm)
+        self.mcts = MCTS(self.config, self.fwm, self.policy_net, planner_ref=self) 
         
         # Training statistics
         self.train_step = 0
