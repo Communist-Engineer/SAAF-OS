@@ -72,6 +72,11 @@ def run_all_scenarios():
             zipf.write(f, os.path.join('reports', os.path.basename(f)))
         for f in glob.glob('plots/*.png'):
             zipf.write(f, os.path.join('plots', os.path.basename(f)))
+        # Also add agent logs and contradiction broadcasts
+        for f in glob.glob('memory/*_episodes.jsonl'):
+            zipf.write(f, os.path.join('memory', os.path.basename(f)))
+        if os.path.exists('diagnostics/contradiction_broadcasts.jsonl'):
+            zipf.write('diagnostics/contradiction_broadcasts.jsonl', 'diagnostics/contradiction_broadcasts.jsonl')
     print(f'All scenario results zipped to {zip_path}')
 
 def main():

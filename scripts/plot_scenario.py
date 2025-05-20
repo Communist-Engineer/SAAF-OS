@@ -95,6 +95,30 @@ def plot_patch_trajectory(episodes, outdir, scenario_name='scenario'):
     plt.close()
     print(f'Patch trajectory plot saved to {fname}')
 
+def plot_multi_agent_logs(agent_logs, outdir):
+    # Plot contradiction scores for each agent
+    plt.figure(figsize=(12, 6))
+    for log_path in agent_logs:
+        agent_id = os.path.basename(log_path).split('_')[0]
+        scores = []
+        with open(log_path) as f:
+            for line in f:
+                try:
+                    entry = json.loads(line)
+                    scores.append(entry.get('contradiction_score', 0))
+                except Exception:
+                    continue
+        plt.plot(scores, label=agent_id)
+    plt.xlabel('Step')
+    plt.ylabel('Contradiction Score')
+    plt.title('Agent Contradiction Scores Over Time')
+    plt.legend()
+    plt.tight_layout()
+    fname = os.path.join(outdir, 'multi_agent_contradiction.png')
+    plt.savefig(fname)
+    plt.close()
+    print(f'Multi-agent contradiction plot saved to {fname}')
+
 def main():
     if len(sys.argv) < 2:
         print('Usage: python plot_scenario.py <episodes.jsonl> [output_dir]')
@@ -108,6 +132,9 @@ def main():
     plot_delta_z(episodes, outdir)
     plot_latent_heatmap(episodes, outdir)
     plot_patch_trajectory(episodes, outdir, scenario_name=os.path.basename(episodes_path).split('.')[0])
+    agent_logs = [f for f in os.listdir('memory') if f.endswith('_episodes.jsonl')]
+    if agent_logs:
+        plot_multi_agent_logs([os.path.join('memory', f) for f in agent_logs], outdir)
     print(f'Plots saved to {outdir}')
 
 if __name__ == '__main__':
