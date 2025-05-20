@@ -527,7 +527,7 @@ class RSIEngine:
                 if (p.status == "applied" and 
                     pid != patch_id and 
                     pid in self.active_patches):
-                    # For this demo, we assume patches to "moduleN.py" depend on "module(N-1).py"
+                    # For this demo, we assume patches to "moduleN.py" depend on "module1.py"
                     # e.g., module2.py depends on module1.py
                     # In a real implementation, actual dependency information would be used
                     if p.module_path.endswith(".py") and current_module.endswith(".py"):
@@ -680,6 +680,32 @@ class RSIEngine:
                 "security_score": security_score,
                 "recommendation": "approve" if all(s > 0.5 for s in [quality_score, compatibility_score, security_score]) else "reject"
             })
+    
+    def test_patch_sandbox(self, patch_path: str, test_command: str = None) -> Dict[str, Any]:
+        """
+        Run patched module tests in a subprocess and capture results.
+        
+        Args:
+            patch_path: Path to the patched module or patch file
+            test_command: Optional test command to run (default: pytest for the module)
+        
+        Returns:
+            Dictionary with pass/fail, output, and timing
+        """
+        import subprocess
+        import time
+        if test_command is None:
+            test_command = f"pytest {patch_path}"
+        start = time.time()
+        try:
+            result = subprocess.run(test_command, shell=True, capture_output=True, text=True, timeout=120)
+            passed = result.returncode == 0
+            output = result.stdout + "\n" + result.stderr
+        except Exception as e:
+            passed = False
+            output = str(e)
+        elapsed = time.time() - start
+        return {"passed": passed, "output": output, "elapsed": elapsed}
 
 
 class DummyRSIEngine(RSIEngine):

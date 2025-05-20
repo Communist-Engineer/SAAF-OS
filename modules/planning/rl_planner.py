@@ -415,13 +415,14 @@ class MCTS:
         # Create children for all actions
         for action in range(self.action_space_size):
             # Use forward model to predict next state
-            next_state, reward = self.forward_model(node.state, action)
-            
+            next_state, _ = self.forward_model(node.state, action)
+            # Value vector: for demo, use next_state[1:5] as value vector
+            value_vector = next_state[1:5] if len(next_state) > 4 else np.zeros(4)
+            # Compute reward using RLPlanner's reward function
+            reward = self.planner_ref._reward(next_state, value_vector)
             # Create child node
             child = MCTSNode(next_state, prior=action_probs[action])
             child.reward = reward
-            
-            # Add child
             node.add_child(action, child)
     
     def _select_child(self, node: MCTSNode) -> Tuple[int, MCTSNode]:
@@ -519,11 +520,12 @@ class DummyForwardModel:
         # Apply perturbation
         next_state = state + perturbation
         next_state = next_state / np.linalg.norm(next_state)
-        
-        # Calculate reward based on contradictions and other metrics
-        reward = 0.5 * next_state[0]  # Higher is better (less contradiction)
-        reward -= 0.3 * next_state[1]  # Lower energy usage is better
-        
+        # Value vector: for demo, use next_state[1:5]
+        value_vector = next_state[1:5] if len(next_state) > 4 else np.zeros(4)
+        # Use RLPlanner reward function if available
+        reward = -next_state[0]
+        if hasattr(self, 'planner_ref') and hasattr(self.planner_ref, '_reward'):
+            reward = self.planner_ref._reward(next_state, value_vector)
         return next_state, reward
 
     def simulate(self, action_seq: List[int], z_t: np.ndarray, horizon: int) -> List[np.ndarray]:
@@ -647,6 +649,9 @@ class RLPlanner:
         self.train_step = 0
         self.episode_rewards = []
 
+        # ContradictionLoss integration
+        self.contradiction_loss = ContradictionLoss()
+
     def _run_mcts(self, state, goal_vector=None):
         """
         Run MCTS on a state.
@@ -712,6 +717,25 @@ class RLPlanner:
         contradiction_level = -state[0]  # First dimension tracks contradiction
         return contradiction_level
     
+    def _reward(self, z_t: np.ndarray, value_vector: np.ndarray = None) -> float:
+        """
+        Compute reward as R_t = -L_contradiction(z_t) + sum(w_i * value_vector[i])
+        """
+        # Contradiction loss: for dummy, use -z_t[0]; for real, use ContradictionLoss
+        if self.use_dummy_models:
+            l_contradiction = -z_t[0]
+        else:
+            z_t_tensor = torch.tensor(z_t, dtype=torch.float32).unsqueeze(0)
+            l_contradiction = float(self.contradiction_loss(z_t_tensor, z_t_tensor, z_t_tensor).item())
+        # Value vector: use config weights and indices if provided
+        reward = -l_contradiction
+        if value_vector is not None and self.config.value_vector_weights and self.config.value_vector_indices:
+            reward += float(np.dot(
+                np.array(self.config.value_vector_weights),
+                value_vector[self.config.value_vector_indices]
+            ))
+        return reward
+
     def select_action(self, z_t: np.ndarray, use_mcts: bool = True) -> Dict[str, Any]:
         """
         Select an action for a given state.
@@ -838,8 +862,9 @@ class RLPlanner:
         
         # Add predicted outcome
         next_state, reward = self.fwm(z_t, action_result["action"])
+        value_vector = next_state[1:5] if len(next_state) > 4 else np.zeros(4)
         plan["predicted_next_state"] = next_state.tolist()
-        plan["predicted_reward"] = float(reward)
+        plan["predicted_reward"] = float(self._reward(next_state, value_vector))
         
         return plan
     

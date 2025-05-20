@@ -16,7 +16,7 @@ def simulate_plan(z_t: np.ndarray, plan: Dict) -> Tuple[np.ndarray, float]:
         z_t: Current latent state vector
         plan: Dictionary containing plan details including steps, energy usage, etc.
             Expected keys: 'steps', 'total_energy'
-    
+
     Returns:
         Tuple containing:
         - Predicted latent state z_t+1

@@ -52,9 +52,21 @@ def evaluate_patch(patch: str) -> bool:
 
 def governance_vote(patch: str) -> bool:
     """
-    Dummy governance vote: accept if patch string contains 'safe'.
+    Simulate a governance vote. Accept if patch string contains 'safe', else veto.
+    Logs the outcome and returns True (accepted) or False (vetoed).
     """
-    return "safe" in patch
+    accepted = "safe" in patch
+    logger.info(f"Governance vote: {'accepted' if accepted else 'vetoed'} for patch: {patch}")
+    return accepted
+
+def initiate_vote(patch: str) -> bool:
+    """
+    Stub for governance voting. Calls governance_vote and blocks failing patches.
+    """
+    result = governance_vote(patch)
+    if not result:
+        logger.warning(f"Patch {patch} was vetoed by governance.")
+    return result
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, 
@@ -305,7 +317,7 @@ class ScenarioRunner:
             print("RSI: No patch proposed (contradiction below threshold)")
 
         if patch:
-            accepted = governance_vote(patch)
+            accepted = initiate_vote(patch)
             print(f"Governance vote: {'accepted' if accepted else 'vetoed'}")
             if accepted:
                 improved = evaluate_patch(patch)
@@ -717,7 +729,7 @@ class ScenarioRunner:
                     }
                 )
                 
-                # Step 9: Generate action plan using RL Planner
+                # Step 9: Generate action plan with RL Planner
                 logger.info("Generating action plan with RL Planner")
                 plan = self.planner.plan(
                     z_t=z_t,
@@ -975,7 +987,7 @@ class ScenarioRunner:
         top_indices = np.argsort(np.abs(latent_diff_before))[-3:]
         for i in top_indices:
             print(f"  - Dim {i}: {z_t[i]:.4f} -> {z_next_before[i]:.4f} (Δ: {latent_diff_before[i]:.4f})")
-        
+
         # RSI integration: propose, evaluate, and vote on patch
         patch = None
         if contradiction_before > 0.01:
@@ -985,7 +997,7 @@ class ScenarioRunner:
             print("RSI: No patch proposed (contradiction below threshold)")
         
         if patch:
-            accepted = governance_vote(patch)
+            accepted = initiate_vote(patch)
             print(f"Governance vote: {'accepted' if accepted else 'vetoed'}")
             if accepted:
                 improved = evaluate_patch(patch)
@@ -1030,71 +1042,69 @@ class ScenarioRunner:
                                 if old_subgoal.get('priority') != new_subgoal.get('priority'):
                                     print(f"- Subgoal '{old_subgoal['description']}' priority changed: " +
                                           f"{old_subgoal.get('priority', 'none')} → {new_subgoal.get('priority', 'none')}")
+            
+            # Update the goal for the next planning cycle
+            goal = reframed_goal
+            
+            # Generate a new plan with the reframed goal
+            print("\n🧮 Generating new plan using reframed goal:")
+            result = planner.generate_plan(z_t, goal)
+            plan = result['plan']
+            print(f"Generated plan with {len(plan['steps'])} steps")
+            
+            # Simulate with new plan
+            print("\n🔮 Simulating with reframed goal:")
+            z_next_reframed, contradiction_reframed = fwm.simulate_plan(z_t, plan)
+            
+            # Compare contradiction scores
+            print(f"Contradiction score before reframing: {contradiction_before:.4f}")
+            print(f"Contradiction score after reframing: {contradiction_reframed:.4f}")
+            
+            # Update contradiction history
+            contradiction_history.pop(0)
+            contradiction_history.append(contradiction_reframed)
+            
+            # Additional dialectical reframing iterations
+            iterations = 0
+            max_iterations = scenario_dict.get("max_reframing_iterations", 2)
+            
+            while iterations < max_iterations and contradiction_history[-1] > 0.1:
+                iterations += 1
+                print(f"\n🔄 STEP 8.{iterations}: Additional Dialectical Goal Reframing Iteration")
+                print(f"Current contradiction history: {[round(c, 2) for c in contradiction_history]}")
                 
-                # Update the goal for the next planning cycle
-                goal = reframed_goal
-                
-                # Generate a new plan with the reframed goal
-                print("\n🧮 Generating new plan using reframed goal:")
-                result = planner.generate_plan(z_t, goal)
-                plan = result['plan']
-                print(f"Generated plan with {len(plan['steps'])} steps")
-                
-                # Simulate with new plan
-                print("\n🔮 Simulating with reframed goal:")
-                z_next_reframed, contradiction_reframed = fwm.simulate_plan(z_t, plan)
-                
-                # Compare contradiction scores
-                print(f"Contradiction score before reframing: {contradiction_before:.4f}")
-                print(f"Contradiction score after reframing: {contradiction_reframed:.4f}")
-                
-                # Update contradiction history
-                contradiction_history.pop(0)
-                contradiction_history.append(contradiction_reframed)
-                
-                # Additional dialectical reframing iterations
-                iterations = 0
-                max_iterations = scenario_dict.get("max_reframing_iterations", 2)
-                
-                while iterations < max_iterations and contradiction_history[-1] > 0.1:
-                    iterations += 1
-                    print(f"\n🔄 STEP 8.{iterations}: Additional Dialectical Goal Reframing Iteration")
-                    print(f"Current contradiction history: {[round(c, 2) for c in contradiction_history]}")
+                # Check if further goal reframing is needed
+                reframed_goal = self.meta_reasoner.reframe_goal(u_t, z_t, goal, contradiction_history)
+                if (reframed_goal and reframed_goal != goal):
+                    print("Goal further reframed due to persistent contradictions!")
+                    print("Previous goal:")
+                    print(json.dumps(goal, indent=2))
+                    print("\nFurther reframed goal:")
+                    print(json.dumps(reframed_goal, indent=2))
                     
-                    # Check if further goal reframing is needed
-                    reframed_goal = self.meta_reasoner.reframe_goal(u_t, z_t, goal, contradiction_history)
-                    if (reframed_goal and reframed_goal != goal):
-                        print("Goal further reframed due to persistent contradictions!")
-                        print("Previous goal:")
-                        print(json.dumps(goal, indent=2))
-                        print("\nFurther reframed goal:")
-                        print(json.dumps(reframed_goal, indent=2))
-                        
-                        # Update the goal for the next planning cycle
-                        goal = reframed_goal
-                        
-                        # Generate a new plan with the reframed goal
-                        print("\n🧮 Generating new plan using further reframed goal:")
-                        result = planner.generate_plan(z_t, goal)
-                        plan = result['plan']
-                        print(f"Generated plan with {len(plan['steps'])} steps")
-                        
-                        # Simulate with new plan
-                        print("\n🔮 Simulating with further reframed goal:")
-                        z_next_reframed, contradiction_reframed = fwm.simulate_plan(z_t, plan)
-                        
-                        # Compare contradiction scores
-                        print(f"Previous contradiction score: {contradiction_history[-1]:.4f}")
-                        print(f"New contradiction score: {contradiction_reframed:.4f}")
-                        
-                        # Update contradiction history
-                        contradiction_history.pop(0)
-                        contradiction_history.append(contradiction_reframed)
-                    else:
-                        print("No further significant reframing needed - goal has stabilized.")
-                        break
-            else:
-                print("No goal reframing needed or possible at this time.")
+                    # Update the goal for the next planning cycle
+                    goal = reframed_goal
+                    
+                    # Generate a new plan with the reframed goal
+                    print("\n🧮 Generating new plan using further reframed goal:")
+                    result = planner.generate_plan(z_t, goal)
+                    plan = result['plan']
+                    print(f"Generated plan with {len(plan['steps'])} steps")
+                    
+                    # Simulate with new plan
+                    print("\n🔮 Simulating with further reframed goal:")
+                    z_next_reframed, contradiction_reframed = fwm.simulate_plan(z_t, plan)
+                    
+                    # Compare contradiction scores
+                    print(f"Previous contradiction score: {contradiction_history[-1]:.4f}")
+                    print(f"New contradiction score: {contradiction_reframed:.4f}")
+                    
+                    # Update contradiction history
+                    contradiction_history.pop(0)
+                    contradiction_history.append(contradiction_reframed)
+                else:
+                    print("No further significant reframing needed - goal has stabilized.")
+                    break
         else:
             print("Dialectical goal reframing is disabled for this scenario.")
         
