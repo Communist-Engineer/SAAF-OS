@@ -564,3 +564,26 @@ class ContradictionEngine:
                 self.contradiction_graph.update_edge_tension(edge.id, new_tension)
         
         return score
+    
+    def log_synthesis_attempt(self, c1, c2, method, path, resolution_score):
+        """
+        Log a contradiction synthesis attempt/result to diagnostics/synthesis_log.jsonl.
+        Args:
+            c1, c2: Contradiction types or edge/node IDs involved
+            method: Synthesis strategy used
+            path: Synthesis plan metadata (list or dict)
+            resolution_score: Success boolean or float score
+        """
+        import os, json, time
+        log_path = os.path.join('diagnostics', 'synthesis_log.jsonl')
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        entry = {
+            'timestamp': time.time(),
+            'contradiction_1': c1,
+            'contradiction_2': c2,
+            'strategy': method,
+            'synthesis_path': path,
+            'resolution_score': resolution_score
+        }
+        with open(log_path, 'a', encoding='utf-8') as f:
+            f.write(json.dumps(entry) + '\n')

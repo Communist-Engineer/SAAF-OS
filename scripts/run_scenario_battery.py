@@ -2,7 +2,39 @@ import os
 import glob
 import zipfile
 import subprocess
+import json
 from datetime import datetime
+
+def evaluate_synthesis(scenario_name, diagnostics_path='diagnostics/synthesis_log.jsonl'):
+    # Analyze synthesis log for this scenario
+    contradictions = 0
+    resolved = 0
+    scores = []
+    if not os.path.exists(diagnostics_path):
+        return None
+    with open(diagnostics_path, 'r') as f:
+        for line in f:
+            entry = json.loads(line)
+            if scenario_name in str(entry.get('synthesis_path', '')):
+                contradictions += 1
+                score = entry.get('resolution_score')
+                if score and score > 0.5:
+                    resolved += 1
+                if score is not None:
+                    scores.append(score)
+    percent_resolved = (resolved / contradictions) * 100 if contradictions else 0
+    avg_score = float(sum(scores) / len(scores)) if scores else None
+    summary = {
+        'contradictions_detected': contradictions,
+        'percent_resolved': percent_resolved,
+        'avg_resolution_score': avg_score
+    }
+    outpath = os.path.join('reports', f'synthesis_eval_{scenario_name}.json')
+    os.makedirs('reports', exist_ok=True)
+    with open(outpath, 'w') as f:
+        json.dump(summary, f, indent=2)
+    print(f'Synthesis evaluation for {scenario_name} written to {outpath}')
+    return summary
 
 def run_all_scenarios():
     scenario_names = ['simple', 'scenario_1', 'scenario_2']
@@ -19,6 +51,7 @@ def run_all_scenarios():
             summary_paths.append(summary_path)
         else:
             print(f'Warning: No summary found for {scenario}')
+        evaluate_synthesis(scenario)
     # Copy episodes.jsonl and audit log if present
     if os.path.exists('memory/episodes.jsonl'):
         import shutil

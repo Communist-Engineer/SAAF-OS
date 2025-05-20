@@ -16,6 +16,9 @@ import logging
 import numpy as np
 from typing import Dict, Any, List
 import argparse
+import zipfile
+import glob
+from datetime import datetime
 
 # Add the repository root to the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -102,6 +105,29 @@ def append_governance_audit(proposal, decision, voters, value_vector_before, val
     os.makedirs(os.path.dirname(audit_path), exist_ok=True)
     with open(audit_path, "a", encoding="utf-8") as f:
         f.write(json.dumps(audit_entry) + "\n")
+
+def compress_audit_bundle(scenario_name, summary_path=None):
+    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    archive_dir = 'archive'
+    os.makedirs(archive_dir, exist_ok=True)
+    zip_path = os.path.join(archive_dir, f'saaf_{scenario_name}_{ts}.zip')
+    with zipfile.ZipFile(zip_path, 'w') as zipf:
+        files = [
+            'memory/episodes.jsonl',
+            'governance/audit_log.jsonl',
+            'diagnostics/synthesis_log.jsonl',
+        ]
+        if summary_path and os.path.exists(summary_path):
+            files.append(summary_path)
+        # Add plots if available
+        plot_dir = f'reports/plots_{ts}'
+        if os.path.exists(plot_dir):
+            for f in glob.glob(os.path.join(plot_dir, '*')):
+                zipf.write(f, os.path.join('plots', os.path.basename(f)))
+        for f in files:
+            if os.path.exists(f):
+                zipf.write(f, os.path.basename(f))
+    print(f'Audit bundle written to {zip_path}')
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, 
@@ -656,6 +682,9 @@ class ScenarioRunner:
             accepted=locals().get('accepted', False)
         )
         print(f"Episode logged to memory/episodes.jsonl")
+        
+        # Compress audit bundle for review
+        compress_audit_bundle(scenario_name, summary_path)
 
     def run_scenario_1(self):
         """
@@ -1099,38 +1128,36 @@ class ScenarioRunner:
         print(f"Contradiction history: {[round(c, 2) for c in contradiction_history]}")
         
         # Goal reframing is only performed if enabled for this scenario
-        if dialect_reframing:
-            # Check if goal reframing is needed
-            reframed_goal = self.meta_reasoner.reframe_goal(u_t, z_t, goal, contradiction_history)
-            if reframed_goal:
-                print("Goal reframed due to persistent contradictions!")
-                print("Original goal:")
-                print(json.dumps(goal, indent=2))
-                print("\nReframed goal:")
-                print(json.dumps(reframed_goal, indent=2))
-                
-                # Highlight the specific changes
-                print("\nKey changes in the reframed goal:")
-                
-                # Compare approaches
-                if 'approach' in goal and 'approach' in reframed_goal and goal['approach'] != reframed_goal['approach']:
-                    print(f"- Approach changed from:\n  '{goal['approach']}' to\n  '{reframed_goal['approach']}'")
-                
-                # Compare objectives
-                if 'objectives' in goal and 'objectives' in reframed_goal:
-                    for i, (old, new) in enumerate(zip(goal['objectives'], reframed_goal['objectives'])):
-                        if old != new:
-                            print(f"- Objective {i+1} changed from '{old}' to '{new}'")
-                
-                # Compare subgoals
-                if 'subgoals' in goal and 'subgoals' in reframed_goal:
-                    for i, old_subgoal in enumerate(goal['subgoals']):
-                        # Find matching subgoal in reframed goal
-                        for j, new_subgoal in enumerate(reframed_goal['subgoals']):
-                            if old_subgoal['description'] == new_subgoal['description']:
-                                if old_subgoal.get('priority') != new_subgoal.get('priority'):
-                                    print(f"- Subgoal '{old_subgoal['description']}' priority changed: " +
-                                          f"{old_subgoal.get('priority', 'none')} → {new_subgoal.get('priority', 'none')}")
+        reframed_goal = self.meta_reasoner.reframe_goal(u_t, z_t, goal, contradiction_history)
+        if reframed_goal:
+            print("Goal reframed due to persistent contradictions!")
+            print("Original goal:")
+            print(json.dumps(goal, indent=2))
+            print("\nReframed goal:")
+            print(json.dumps(reframed_goal, indent=2))
+            
+            # Highlight the specific changes
+            print("\nKey changes in the reframed goal:")
+            
+            # Compare approaches
+            if 'approach' in goal and 'approach' in reframed_goal and goal['approach'] != reframed_goal['approach']:
+                print(f"- Approach changed from:\n  '{goal['approach']}' to\n  '{reframed_goal['approach']}'")
+            
+            # Compare objectives
+            if 'objectives' in goal and 'objectives' in reframed_goal:
+                for i, (old, new) in enumerate(zip(goal['objectives'], reframed_goal['objectives'])):
+                    if old != new:
+                        print(f"- Objective {i+1} changed from '{old}' to '{new}'")
+            
+            # Compare subgoals
+            if 'subgoals' in goal and 'subgoals' in reframed_goal:
+                for i, old_subgoal in enumerate(goal['subgoals']):
+                    # Find matching subgoal in reframed goal
+                    for j, new_subgoal in enumerate(reframed_goal['subgoals']):
+                        if old_subgoal['description'] == new_subgoal['description']:
+                            if old_subgoal.get('priority') != new_subgoal.get('priority'):
+                                print(f"- Subgoal '{old_subgoal['description']}' priority changed: " +
+                                      f"{old_subgoal.get('priority', 'none')} → {new_subgoal.get('priority', 'none')}")
             
             # Update the goal for the next planning cycle
             goal = reframed_goal
@@ -1320,6 +1347,9 @@ class ScenarioRunner:
             accepted=locals().get('accepted', False)
         )
         print(f"Episode logged to memory/episodes.jsonl")
+        
+        # Compress audit bundle for review
+        compress_audit_bundle(scenario_name, summary_path)
 
 
 if __name__ == "__main__":
