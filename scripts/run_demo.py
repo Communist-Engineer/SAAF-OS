@@ -687,13 +687,35 @@ class ScenarioRunner:
         compress_audit_bundle(scenario_name, summary_path)
 
         # --- Post-Run Reporting Pipeline ---
-        import subprocess
-        # Generate casebook summary
-        subprocess.run(['python', 'scripts/generate_casebook.py'])
-        # Generate feedback
-        subprocess.run(['python', 'scripts/generate_feedback.py', '--scenario', scenario_name, '--output', f'reports/{scenario_name}_feedback.json'])
-        # Generate plots
-        subprocess.run(['python', 'scripts/plot_scenario.py', 'memory/episodes.jsonl', f'plots/{scenario_name}'])
+        if getattr(self, '_run_post_analysis', False):
+            import subprocess
+            # Generate casebook summary
+            subprocess.run(['python', 'scripts/generate_casebook.py'])
+            # Generate feedback
+            subprocess.run(['python', 'scripts/generate_feedback.py', '--scenario', scenario_name, '--output', f'reports/{scenario_name}_feedback.json'])
+            # Generate plots
+            subprocess.run(['python', 'scripts/plot_scenario.py', 'memory/episodes.jsonl', f'plots/{scenario_name}'])
+            # Summarize contradictions
+            subprocess.run(['python', 'scripts/summarize_contradictions.py'])
+            # Print confirmation and verify outputs
+            expected_files = [
+                f'reports/{scenario_name}_summary.json',
+                f'reports/{scenario_name}_feedback.json',
+                'reports/casebook_summary.json',
+                'reports/contradiction_summary.json',
+                f'plots/{scenario_name}_timeline.png',
+                'plots/agent_synthesis_timeline.png',
+                'plots/delegation_matrix.png',
+                'diagnostics/synthesis_log.jsonl',
+                'diagnostics/contradiction_broadcasts.jsonl',
+                'diagnostics/delegation_log.jsonl',
+                'memory/episodes.jsonl',
+            ]
+            missing = [f for f in expected_files if not os.path.exists(f)]
+            if missing:
+                print(f"[Post-Analysis] WARNING: Missing expected output files: {missing}")
+            else:
+                print(f"[Post-Analysis] All analytics outputs generated and verified for scenario '{scenario_name}'.")
 
     def run_scenario_1(self):
         """
@@ -1370,14 +1392,35 @@ class ScenarioRunner:
         compress_audit_bundle(scenario_name, summary_path)
 
         # --- Post-Run Reporting Pipeline ---
-        import subprocess
-        # Generate casebook summary
-        subprocess.run(['python', 'scripts/generate_casebook.py'])
-        # Generate feedback
-        subprocess.run(['python', 'scripts/generate_feedback.py', '--scenario', scenario_name, '--output', f'reports/{scenario_name}_feedback.json'])
-        # Generate plots
-        subprocess.run(['python', 'scripts/plot_scenario.py', 'memory/episodes.jsonl', f'plots/{scenario_name}'])
-
+        if getattr(self, '_run_post_analysis', False):
+            import subprocess
+            # Generate casebook summary
+            subprocess.run(['python', 'scripts/generate_casebook.py'])
+            # Generate feedback
+            subprocess.run(['python', 'scripts/generate_feedback.py', '--scenario', scenario_name, '--output', f'reports/{scenario_name}_feedback.json'])
+            # Generate plots
+            subprocess.run(['python', 'scripts/plot_scenario.py', 'memory/episodes.jsonl', f'plots/{scenario_name}'])
+            # Summarize contradictions
+            subprocess.run(['python', 'scripts/summarize_contradictions.py'])
+            # Print confirmation and verify outputs
+            expected_files = [
+                f'reports/{scenario_name}_summary.json',
+                f'reports/{scenario_name}_feedback.json',
+                'reports/casebook_summary.json',
+                'reports/contradiction_summary.json',
+                f'plots/{scenario_name}_timeline.png',
+                'plots/agent_synthesis_timeline.png',
+                'plots/delegation_matrix.png',
+                'diagnostics/synthesis_log.jsonl',
+                'diagnostics/contradiction_broadcasts.jsonl',
+                'diagnostics/delegation_log.jsonl',
+                'memory/episodes.jsonl',
+            ]
+            missing = [f for f in expected_files if not os.path.exists(f)]
+            if missing:
+                print(f"[Post-Analysis] WARNING: Missing expected output files: {missing}")
+            else:
+                print(f"[Post-Analysis] All analytics outputs generated and verified for scenario '{scenario_name}'.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="SAAF-OS Demo Runner")
@@ -1386,15 +1429,16 @@ if __name__ == "__main__":
     parser.add_argument("--planner_strategy", type=str, default="auto", 
                         choices=["auto", "retrieved", "distilled", "rl", "manual"],
                         help="Strategy for plan selection (default: auto)")
+    parser.add_argument("--run_post_analysis", action="store_true", default=False,
+                        help="If set, run post-scenario analytics pipeline (casebook, feedback, plots, etc)")
     args = parser.parse_args()
 
     logger.info("Starting SAAF-OS demo")
     try:
         runner = ScenarioRunner(planner_strategy=args.planner_strategy)
+        runner._run_post_analysis = args.run_post_analysis  # Set flag on runner
         if args.scenario == "all":
-            # Run our simplified demo first
             runner.run_simplified_demo()
-            # Then run other scenarios
             loader = ScenarioLoader()
             for scenario in loader.list_scenarios():
                 print(f"\nRunning Scenario {scenario['number']}: {scenario['title']}")
