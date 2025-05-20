@@ -23,7 +23,7 @@ foreach ($scenario in $scenarios) {
 Get-ChildItem -Path memory\*.jsonl -ErrorAction SilentlyContinue | Copy-Item -Destination "$snapshotDir\memory" -Force
 Get-ChildItem -Path memory\*.log -ErrorAction SilentlyContinue | Copy-Item -Destination "$snapshotDir\memory" -Force
 
-#Write-Host "🧠 Copying trained models..."
+#Write-Host " Copying trained models..."
 Get-ChildItem -Path models\*.pt -ErrorAction SilentlyContinue | Copy-Item -Destination "$snapshotDir\models" -Force
 
 #Write-Host "📊 Saving environment metadata..."

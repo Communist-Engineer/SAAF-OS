@@ -581,6 +581,24 @@ class RSIEngine:
         """
         return self.module_version_map.copy()
     
+    def log_value_drift(self, value_vector_before, value_vector_after, threshold=0.2):
+        """
+        Compute and log value drift. Print warning if drift exceeds threshold.
+        """
+        import numpy as np
+        drift = np.linalg.norm(np.array(value_vector_after) - np.array(value_vector_before))
+        from modules.logging import metrics_logger
+        metrics_logger.log_contradiction_event({
+            'event': 'value_drift',
+            'drift': drift,
+            'before': value_vector_before,
+            'after': value_vector_after,
+            'threshold': threshold
+        })
+        if drift > threshold:
+            print(f"⚠️ Value drift detected: {drift:.3f} > threshold {threshold}")
+        return drift
+
     def _handle_governance_decision(self, message: Dict[str, Any]) -> None:
         """
         Handle governance decision messages from the bus.

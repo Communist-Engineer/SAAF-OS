@@ -43,6 +43,7 @@ from modules.rsi.engine import propose_patch
 from modules.scenarios import load_scenario
 from modules.memory.logger import log_episode
 from modules.memory.retrieval import retrieve_similar_episode
+from modules.logging import metrics_logger
 
 def evaluate_patch(patch: str) -> bool:
     """
@@ -62,8 +63,16 @@ def governance_vote(patch: str) -> bool:
 def initiate_vote(patch: str) -> bool:
     """
     Stub for governance voting. Calls governance_vote and blocks failing patches.
+    Records detailed vote metadata.
     """
     result = governance_vote(patch)
+    vote_metadata = {
+        'patch': patch,
+        'accepted': result,
+        'timestamp': time.time(),
+        'rationale': 'placeholder_rationale'  # Extend with real rationale if available
+    }
+    metrics_logger.log_contradiction_event({'event': 'governance_vote', **vote_metadata})
     if not result:
         logger.warning(f"Patch {patch} was vetoed by governance.")
     return result
@@ -553,10 +562,64 @@ class ScenarioRunner:
         )
         print(f"MetaReasoner updated with execution success score: {execution_success_score:.4f}")
         
+        # --- Metrics Logging ---
+        # Log scenario start
+        scenario_metrics = {
+            'steps': [],
+            'contradiction_scores': [],
+            'value_vectors': [],
+            'rewards': [],
+            'tension_events': [],
+            'governance_votes': [],
+            'rsi_patches': [],
+        }
+        scenario_name = 'simple'
+        scenario_metrics['start_time'] = time.time()
+        metrics_logger.log_contradiction_event({'event': 'scenario_start', 'scenario': scenario_name})
+        
+        # After encoding world state
+        metrics_logger.log_value_vector(z_t.tolist())
+        scenario_metrics['value_vectors'].append(z_t.tolist())
+        
+        # After each plan generation
+        metrics_logger.log_contradiction_event({'event': 'plan_generated', 'planner': 'distilled'})
+        metrics_logger.log_contradiction_event({'event': 'plan_generated', 'planner': 'rl'})
+        
+        # After plan arbitration
+        metrics_logger.log_contradiction_event({'event': 'plan_selected', 'method': arbitration_method})
+        
+        # After contradiction calculation
+        metrics_logger.log_tension_score(z_t.tolist(), contradiction_before)
+        scenario_metrics['contradiction_scores'].append(contradiction_before)
+        
+        # After FWM simulation
+        metrics_logger.log_contradiction_event({'event': 'fwm_simulation', 'contradiction': contradiction_before})
+        
+        # After RSI patch proposal
+        if patch:
+            metrics_logger.log_contradiction_event({'event': 'rsi_patch', 'patch': patch})
+            scenario_metrics['rsi_patches'].append(patch)
+        
+        # After governance vote
+        if patch:
+            metrics_logger.log_contradiction_event({'event': 'governance_vote', 'patch': patch, 'accepted': accepted})
+            scenario_metrics['governance_votes'].append({'patch': patch, 'accepted': accepted})
+        
+        # After reward calculation (if available)
+        # metrics_logger.log_reward_trace(reward)  # Add reward logging if reward is computed
+        # scenario_metrics['rewards'].append(reward)
+        
+        # At end of scenario, write summary JSON
+        scenario_metrics['end_time'] = time.time()
+        summary_path = os.path.join('reports', f'{scenario_name}_summary.json')
+        with open(summary_path, 'w') as f:
+            json.dump(scenario_metrics, f, indent=2)
+        print(f'Scenario summary written to {summary_path}')
+        
         print("\n" + "="*70)
         # Log this episode to memory
         log_episode(
-            scenario_name=scenario_title,
+            scenario_name=scenario_name,
             inputs=u_t,
             plan=plan,
             z_t=z_t,
@@ -1163,10 +1226,64 @@ class ScenarioRunner:
         )
         print(f"MetaReasoner updated with execution success score: {execution_success_score:.4f}")
         
+        # --- Metrics Logging ---
+        # Log scenario start
+        scenario_metrics = {
+            'steps': [],
+            'contradiction_scores': [],
+            'value_vectors': [],
+            'rewards': [],
+            'tension_events': [],
+            'governance_votes': [],
+            'rsi_patches': [],
+        }
+        scenario_name = 'simple'
+        scenario_metrics['start_time'] = time.time()
+        metrics_logger.log_contradiction_event({'event': 'scenario_start', 'scenario': scenario_name})
+        
+        # After encoding world state
+        metrics_logger.log_value_vector(z_t.tolist())
+        scenario_metrics['value_vectors'].append(z_t.tolist())
+        
+        # After each plan generation
+        metrics_logger.log_contradiction_event({'event': 'plan_generated', 'planner': 'distilled'})
+        metrics_logger.log_contradiction_event({'event': 'plan_generated', 'planner': 'rl'})
+        
+        # After plan arbitration
+        metrics_logger.log_contradiction_event({'event': 'plan_selected', 'method': arbitration_method})
+        
+        # After contradiction calculation
+        metrics_logger.log_tension_score(z_t.tolist(), contradiction_before)
+        scenario_metrics['contradiction_scores'].append(contradiction_before)
+        
+        # After FWM simulation
+        metrics_logger.log_contradiction_event({'event': 'fwm_simulation', 'contradiction': contradiction_before})
+        
+        # After RSI patch proposal
+        if patch:
+            metrics_logger.log_contradiction_event({'event': 'rsi_patch', 'patch': patch})
+            scenario_metrics['rsi_patches'].append(patch)
+        
+        # After governance vote
+        if patch:
+            metrics_logger.log_contradiction_event({'event': 'governance_vote', 'patch': patch, 'accepted': accepted})
+            scenario_metrics['governance_votes'].append({'patch': patch, 'accepted': accepted})
+        
+        # After reward calculation (if available)
+        # metrics_logger.log_reward_trace(reward)  # Add reward logging if reward is computed
+        # scenario_metrics['rewards'].append(reward)
+        
+        # At end of scenario, write summary JSON
+        scenario_metrics['end_time'] = time.time()
+        summary_path = os.path.join('reports', f'{scenario_name}_summary.json')
+        with open(summary_path, 'w') as f:
+            json.dump(scenario_metrics, f, indent=2)
+        print(f'Scenario summary written to {summary_path}')
+        
         print("\n" + "="*70)
         # Log this episode to memory
         log_episode(
-            scenario_name=scenario_title,
+            scenario_name=scenario_name,
             inputs=u_t,
             plan=plan,
             z_t=z_t,
