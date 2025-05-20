@@ -9,30 +9,37 @@ foreach ($subdir in $subdirs) {
     New-Item -Path "$snapshotDir\$subdir" -ItemType Directory -Force | Out-Null
 }
 
-#Write-Host "🧪 Running full test suite..."
+Write-Host "Running full test suite..."
 pytest -v --tb=short | Out-File "$snapshotDir\diagnostics\pytest.log" -Encoding utf8
 
-#Write-Host "🧬 Running scenario simulations..."
+Write-Host "Running scenario simulations..."
 $scenarios = @("solar_conflict", "veto_loop", "alienation_drift")
 foreach ($scenario in $scenarios) {
     Write-Host "▶️ Running scenario: $scenario"
     python scripts\run_demo.py --scenario $scenario *> "$snapshotDir\demo_logs\$scenario.log"
 }
 
-#Write-Host "🧠 Copying memory logs..."
+Write-Host "Copying memory logs..."
 Get-ChildItem -Path memory\*.jsonl -ErrorAction SilentlyContinue | Copy-Item -Destination "$snapshotDir\memory" -Force
 Get-ChildItem -Path memory\*.log -ErrorAction SilentlyContinue | Copy-Item -Destination "$snapshotDir\memory" -Force
 
-#Write-Host " Copying trained models..."
+Write-Host " Copying trained models..."
 Get-ChildItem -Path models\*.pt -ErrorAction SilentlyContinue | Copy-Item -Destination "$snapshotDir\models" -Force
 
-#Write-Host "📊 Saving environment metadata..."
+Write-Host "Saving environment metadata..."
 git rev-parse HEAD | Out-File "$snapshotDir\diagnostics\git_commit.txt"
 python --version | Out-File "$snapshotDir\diagnostics\python_version.txt"
 pip freeze | Out-File "$snapshotDir\diagnostics\pip_freeze.txt"
 tree /F /A | Out-File "$snapshotDir\diagnostics\file_tree.txt"
-
-#Write-Host "🗜️ Zipping everything..."
+Write-Host "Copying additional logs..."
+# Copy synthesis and governance audit logs
+$logFiles = @("synthesis_log.jsonl", "governance\audit_log.jsonl")
+foreach ($file in $logFiles) {
+    if (Test-Path $file) {
+        Copy-Item $file "$snapshotDir\diagnostics" -Force
+    }
+}
+Write-Host "Zipping everything..."
 # Zip the snapshot directory
 $zipPath = "saaf_os_diag_$timestamp.zip"
 Compress-Archive -Path "$snapshotDir\*" -DestinationPath $zipPath -Force

@@ -71,6 +71,30 @@ def plot_latent_heatmap(episodes, outdir):
         plt.savefig(os.path.join(outdir, 'latent_heatmap.svg'))
         plt.close()
 
+def plot_patch_trajectory(episodes, outdir, scenario_name='scenario'):
+    # Gather patch acceptance, tension, veto events
+    steps = list(range(len(episodes)))
+    tensions = [e.get('contradiction_score') or e.get('pre_score') for e in episodes]
+    patches = [(i, e['rsi_patch'], e.get('rsi_accepted')) for i, e in enumerate(episodes) if 'rsi_patch' in e]
+    vetoes = [i for i, e in enumerate(episodes) if e.get('rsi_accepted') is False]
+    plt.figure(figsize=(12, 6))
+    plt.plot(steps, tensions, label='Tension', color='blue')
+    for i, patch, accepted in patches:
+        color = 'green' if accepted else 'red'
+        plt.scatter(i, tensions[i], color=color, marker='^' if accepted else 'x', s=100,
+                    label='Patch Accepted' if accepted else 'Patch Rejected' if i == vetoes[0] else None)
+    for i in vetoes:
+        plt.axvline(i, color='red', linestyle='--', alpha=0.3, label='Governance Veto' if i == vetoes[0] else None)
+    plt.xlabel('Step')
+    plt.ylabel('Tension')
+    plt.title(f'Patch Trajectory for {scenario_name}')
+    plt.legend()
+    plt.tight_layout()
+    fname = os.path.join(outdir, f'patch_trajectory_{scenario_name}.png')
+    plt.savefig(fname)
+    plt.close()
+    print(f'Patch trajectory plot saved to {fname}')
+
 def main():
     if len(sys.argv) < 2:
         print('Usage: python plot_scenario.py <episodes.jsonl> [output_dir]')
@@ -83,6 +107,7 @@ def main():
     plot_reward(episodes, outdir)
     plot_delta_z(episodes, outdir)
     plot_latent_heatmap(episodes, outdir)
+    plot_patch_trajectory(episodes, outdir, scenario_name=os.path.basename(episodes_path).split('.')[0])
     print(f'Plots saved to {outdir}')
 
 if __name__ == '__main__':

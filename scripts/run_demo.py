@@ -796,6 +796,15 @@ class ScenarioRunner:
             )
             
             if synthesis_plan:
+                # Log synthesis attempt
+                self.contradiction_engine.log_synthesis_attempt(
+                    c1=edge.source_id,
+                    c2=edge.target_id,
+                    method='synthesis',
+                    path=synthesis_plan.synthesis_path if synthesis_plan else None,
+                    resolution_score=synthesis_plan.tension_diff if synthesis_plan else 0.0
+                )
+                
                 # Publish synthesis plan to message bus
                 self.contradiction_bus.publish(
                     "contradiction.plan.suggested",
