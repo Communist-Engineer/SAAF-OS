@@ -686,6 +686,15 @@ class ScenarioRunner:
         # Compress audit bundle for review
         compress_audit_bundle(scenario_name, summary_path)
 
+        # --- Post-Run Reporting Pipeline ---
+        import subprocess
+        # Generate casebook summary
+        subprocess.run(['python', 'scripts/generate_casebook.py'])
+        # Generate feedback
+        subprocess.run(['python', 'scripts/generate_feedback.py', '--scenario', scenario_name, '--output', f'reports/{scenario_name}_feedback.json'])
+        # Generate plots
+        subprocess.run(['python', 'scripts/plot_scenario.py', 'memory/episodes.jsonl', f'plots/{scenario_name}'])
+
     def run_scenario_1(self):
         """
         Run Scenario 1: AgriBot Contention at Solar Noon
@@ -1359,6 +1368,15 @@ class ScenarioRunner:
         
         # Compress audit bundle for review
         compress_audit_bundle(scenario_name, summary_path)
+
+        # --- Post-Run Reporting Pipeline ---
+        import subprocess
+        # Generate casebook summary
+        subprocess.run(['python', 'scripts/generate_casebook.py'])
+        # Generate feedback
+        subprocess.run(['python', 'scripts/generate_feedback.py', '--scenario', scenario_name, '--output', f'reports/{scenario_name}_feedback.json'])
+        # Generate plots
+        subprocess.run(['python', 'scripts/plot_scenario.py', 'memory/episodes.jsonl', f'plots/{scenario_name}'])
 
 
 if __name__ == "__main__":

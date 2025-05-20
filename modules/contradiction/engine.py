@@ -565,6 +565,40 @@ class ContradictionEngine:
         
         return score
     
+    SYNTHESIS_METHODS = {}
+    
+    def explain_resolution(self, c, strategy, score):
+        """
+        Return a symbolic explanation for a contradiction resolution.
+        """
+        if hasattr(c, 'contradiction_type'):
+            ctype = c.contradiction_type
+        elif isinstance(c, str):
+            ctype = c
+        else:
+            ctype = str(c)
+        if strategy == 'synthesis':
+            return f"Resolved {ctype} contradiction via synthesis (score {score:.2f}) by prioritizing local storage over inter-agent redistribution."
+        elif strategy == 'reframing':
+            return f"Resolved {ctype} contradiction via goal reframing (score {score:.2f}) by softening agent objectives."
+        elif strategy == 'heuristic':
+            return f"Resolved {ctype} contradiction via heuristic plan rewrite (score {score:.2f})."
+        else:
+            return f"Resolution of {ctype} contradiction via {strategy} (score {score:.2f})."
+    
+    # Example registry for synthesis methods
+    def synthesis_a_star(*args, **kwargs):
+        return 'a_star_result'
+    def goal_softener(*args, **kwargs):
+        return 'goal_softener_result'
+    def fast_plan_rewrite(*args, **kwargs):
+        return 'fast_plan_rewrite_result'
+    SYNTHESIS_METHODS.update({
+        'synthesis': synthesis_a_star,
+        'reframing': goal_softener,
+        'heuristic': fast_plan_rewrite
+    })
+    
     def log_synthesis_attempt(self, c1, c2, method, path, resolution_score):
         """
         Log a contradiction synthesis attempt/result to diagnostics/synthesis_log.jsonl.
@@ -577,13 +611,15 @@ class ContradictionEngine:
         import os, json, time
         log_path = os.path.join('diagnostics', 'synthesis_log.jsonl')
         os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        explanation = self.explain_resolution(c1, method, resolution_score)
         entry = {
             'timestamp': time.time(),
             'contradiction_1': c1,
             'contradiction_2': c2,
             'strategy': method,
             'synthesis_path': path,
-            'resolution_score': resolution_score
+            'resolution_score': resolution_score,
+            'explanation': explanation
         }
         with open(log_path, 'a', encoding='utf-8') as f:
             f.write(json.dumps(entry) + '\n')

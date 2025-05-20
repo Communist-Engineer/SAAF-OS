@@ -67,6 +67,11 @@ def run_all_scenarios():
                 file_path = os.path.join(root, file)
                 arcname = os.path.relpath(file_path, results_dir)
                 zipf.write(file_path, arcname)
+        # Also add reports/*.json and plots/*.png
+        for f in glob.glob('reports/*.json'):
+            zipf.write(f, os.path.join('reports', os.path.basename(f)))
+        for f in glob.glob('plots/*.png'):
+            zipf.write(f, os.path.join('plots', os.path.basename(f)))
     print(f'All scenario results zipped to {zip_path}')
 
 def main():
