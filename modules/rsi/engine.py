@@ -599,6 +599,20 @@ class RSIEngine:
             print(f"⚠️ Value drift detected: {drift:.3f} > threshold {threshold}")
         return drift
 
+    def log_patch_rejection(self, patch_id, reason, tested_by=None, governance_vote=None, value_vector_before=None, value_vector_after=None):
+        entry = {
+            "patch_id": patch_id,
+            "accepted": False,
+            "reason": reason,
+            "tested_by": tested_by,
+            "governance_vote": governance_vote,
+            "value_vector_before": value_vector_before,
+            "value_vector_after": value_vector_after,
+            "timestamp": time.time()
+        }
+        from modules.logging import metrics_logger
+        metrics_logger.log_contradiction_event({"event": "patch_rejection", **entry})
+
     def _handle_governance_decision(self, message: Dict[str, Any]) -> None:
         """
         Handle governance decision messages from the bus.

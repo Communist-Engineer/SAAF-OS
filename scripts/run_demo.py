@@ -73,9 +73,35 @@ def initiate_vote(patch: str) -> bool:
         'rationale': 'placeholder_rationale'  # Extend with real rationale if available
     }
     metrics_logger.log_contradiction_event({'event': 'governance_vote', **vote_metadata})
+    
+    append_governance_audit(
+        proposal=patch,
+        decision='approved' if result else 'rejected',
+        voters=5,  # Placeholder, replace with real voter count if available
+        value_vector_before=None,  # Fill with actual value vectors if tracked
+        value_vector_after=None
+    )
+    
     if not result:
         logger.warning(f"Patch {patch} was vetoed by governance.")
     return result
+
+def append_governance_audit(proposal, decision, voters, value_vector_before, value_vector_after, patch_diff=None):
+    import json, time, os
+    audit_entry = {
+        "proposal": proposal,
+        "decision": decision,
+        "voters": voters,
+        "timestamp": time.time(),
+        "value_vector_before": value_vector_before,
+        "value_vector_after": value_vector_after,
+    }
+    if patch_diff:
+        audit_entry["patch_diff"] = patch_diff
+    audit_path = os.path.join("governance", "audit_log.jsonl")
+    os.makedirs(os.path.dirname(audit_path), exist_ok=True)
+    with open(audit_path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(audit_entry) + "\n")
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, 
