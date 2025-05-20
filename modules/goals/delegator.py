@@ -42,3 +42,10 @@ class GoalDelegator:
 
     def delegation_success_rate(self) -> float:
         return self.success_count / self.total_count if self.total_count else 0.0
+
+    def export_log(self, path: str = 'diagnostics/delegation_log.jsonl'):
+        import os, json
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'w') as f:
+            for event in self.delegation_log:
+                f.write(json.dumps(event) + '\n')

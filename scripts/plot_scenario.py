@@ -119,6 +119,64 @@ def plot_multi_agent_logs(agent_logs, outdir):
     plt.close()
     print(f'Multi-agent contradiction plot saved to {fname}')
 
+def plot_delegation_matrix(delegation_log_path, agent_ids, outdir):
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import json
+    matrix = np.zeros((len(agent_ids), len(agent_ids)), dtype=int)
+    if not os.path.exists(delegation_log_path):
+        return
+    with open(delegation_log_path) as f:
+        for line in f:
+            try:
+                event = json.loads(line)
+                from_idx = agent_ids.index(event['from']) if 'from' in event and event['from'] in agent_ids else None
+                to_idx = agent_ids.index(event['agent_id']) if 'agent_id' in event and event['agent_id'] in agent_ids else None
+                if from_idx is not None and to_idx is not None:
+                    matrix[from_idx, to_idx] += 1
+            except Exception:
+                continue
+    plt.figure(figsize=(8, 6))
+    plt.imshow(matrix, cmap='Blues', interpolation='nearest')
+    plt.colorbar(label='Delegations')
+    plt.xticks(range(len(agent_ids)), agent_ids)
+    plt.yticks(range(len(agent_ids)), agent_ids)
+    plt.xlabel('To Agent')
+    plt.ylabel('From Agent')
+    plt.title('Delegation Matrix')
+    plt.tight_layout()
+    fname = os.path.join(outdir, 'delegation_matrix.png')
+    plt.savefig(fname)
+    plt.close()
+    print(f'Delegation matrix plot saved to {fname}')
+
+def plot_agent_synthesis_timeline(agent_logs, outdir):
+    import matplotlib.pyplot as plt
+    import json
+    plt.figure(figsize=(12, 6))
+    for log_path in agent_logs:
+        agent_id = os.path.basename(log_path).split('_')[0]
+        steps = []
+        synth_attempts = []
+        with open(log_path) as f:
+            for i, line in enumerate(f):
+                try:
+                    entry = json.loads(line)
+                    if entry.get('event') == 'synthesis_attempt':
+                        synth_attempts.append(i)
+                except Exception:
+                    continue
+        plt.plot(synth_attempts, [1]*len(synth_attempts), 'o', label=agent_id)
+    plt.xlabel('Step')
+    plt.yticks([])
+    plt.title('Synthesis Attempts per Agent per Timestep')
+    plt.legend()
+    plt.tight_layout()
+    fname = os.path.join(outdir, 'agent_synthesis_timeline.png')
+    plt.savefig(fname)
+    plt.close()
+    print(f'Agent synthesis timeline plot saved to {fname}')
+
 def main():
     if len(sys.argv) < 2:
         print('Usage: python plot_scenario.py <episodes.jsonl> [output_dir]')
@@ -133,8 +191,11 @@ def main():
     plot_latent_heatmap(episodes, outdir)
     plot_patch_trajectory(episodes, outdir, scenario_name=os.path.basename(episodes_path).split('.')[0])
     agent_logs = [f for f in os.listdir('memory') if f.endswith('_episodes.jsonl')]
+    agent_ids = [os.path.basename(f).split('_')[0] for f in agent_logs]
     if agent_logs:
         plot_multi_agent_logs([os.path.join('memory', f) for f in agent_logs], outdir)
+        plot_agent_synthesis_timeline([os.path.join('memory', f) for f in agent_logs], outdir)
+        plot_delegation_matrix('diagnostics/delegation_log.jsonl', agent_ids, outdir)
     print(f'Plots saved to {outdir}')
 
 if __name__ == '__main__':

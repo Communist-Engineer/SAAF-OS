@@ -51,6 +51,23 @@ $agentLogs = Get-ChildItem -Path *.jsonl -Recurse | Where-Object { $_.Name -like
 foreach ($log in $agentLogs) {
     Copy-Item $log.FullName "$snapshotDir\diagnostics" -Force
 }
+Write-Host "Copying additional diagnostics..."
+
+# Delegation log
+if (Test-Path "diagnostics\\delegation_log.jsonl") {
+    Copy-Item "diagnostics\\delegation_log.jsonl" "$snapshotDir\\diagnostics" -Force
+}
+
+# Contradiction broadcasts
+if (Test-Path "diagnostics\\contradiction_broadcasts.jsonl") {
+    Copy-Item "diagnostics\\contradiction_broadcasts.jsonl" "$snapshotDir\\diagnostics" -Force
+}
+
+# Summarized contradiction report
+Get-ChildItem -Path reports\\*contradiction*.json -ErrorAction SilentlyContinue | Copy-Item -Destination "$snapshotDir\\diagnostics" -Force
+
+# Visualizations
+Get-ChildItem -Path plots\\*.png -ErrorAction SilentlyContinue | Copy-Item -Destination "$snapshotDir\\diagnostics" -Force
 
 Write-Host "Zipping everything..."
 # Zip the snapshot directory

@@ -25,12 +25,37 @@ class SimAgent:
     def handle_broadcast(self, event):
         # Update local contradiction graph or trigger synthesis
         if event['agent_id'] != self.agent_id:
-            self.contradiction_engine.contradiction_graph.add_node(event['c_type'])  # Simplified
-            # Could trigger synthesis proposal here
+            # Add node to local contradiction graph (simplified)
+            self.contradiction_engine.contradiction_graph.add_node(event['c_type'])
+            # Attempt synthesis on received contradiction
+            plan = self.contradiction_engine.resolve_contradiction(event['c_type'], self.agent_id)
+            synthesis_score = None
+            explanation = None
+            if plan:
+                synthesis_score = plan.tension_diff if hasattr(plan, 'tension_diff') else 0.0
+                explanation = self.contradiction_engine.explain_resolution(event['c_type'], 'synthesis', synthesis_score)
+                # Log synthesis attempt to agent log
+                self.log_episode({
+                    'event': 'synthesis_attempt',
+                    'contradiction': event['c_type'],
+                    'plan': getattr(plan, 'actions', None),
+                    'score': synthesis_score,
+                    'explanation': explanation,
+                    'timestamp': time.time()
+                })
 
     def log_episode(self, record):
         with open(self.log_path, 'a') as f:
             f.write(json.dumps(record) + '\n')
+
+    def receive_delegation(self, from_agent, goal):
+        self.log_episode({
+            'event': 'delegation_received',
+            'from': from_agent,
+            'goal': goal,
+            'timestamp': time.time()
+        })
+        self.goal_queue.append(goal)
 
     def step(self):
         if not self.goal_queue:
@@ -81,7 +106,7 @@ def main():
                         # Actually transfer goal
                         for a in agents:
                             if a.agent_id == delegate_to:
-                                a.goal_queue.append(goal)
+                                a.receive_delegation(agent.agent_id, goal)
                                 break
                         continue
                     else:
