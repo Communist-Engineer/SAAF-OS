@@ -9,6 +9,8 @@ import time
 import unittest
 from unittest.mock import MagicMock, patch
 import threading
+import zmq
+import zmq
 
 # Add parent directory to path to import modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -89,7 +91,7 @@ class TestMessageBusAdapter(unittest.TestCase):
         
         # Verify that we set the subscription
         mock_sub.setsockopt.assert_called_with(
-            MagicMock(), b"test.topic"
+            zmq.SUBSCRIBE, b"test.topic"
         )
         
         # Check that the callback was registered
@@ -112,7 +114,7 @@ class TestMessageBusAdapter(unittest.TestCase):
         self.adapter.unsubscribe("test.topic", callback)
         
         # Verify callback was removed
-        self.assertEqual(len(self.adapter.callbacks["test.topic"]), 0)
+        self.assertNotIn("test.topic", self.adapter.callbacks)
         
         # Subscribe again
         self.adapter.subscribe("test.topic", callback)

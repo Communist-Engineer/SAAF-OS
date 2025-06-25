@@ -266,6 +266,7 @@ class MessageBusFactory:
     
     # Dictionary of module name to adapter instance
     _instances: Dict[str, MessageBusAdapter] = {}
+    _next_port = 5555
     
     @classmethod
     def get_adapter(cls, module_name: str) -> MessageBusAdapter:
@@ -279,8 +280,9 @@ class MessageBusFactory:
             MessageBusAdapter instance
         """
         if module_name not in cls._instances:
-            adapter = MessageBusAdapter(module_name)
+            adapter = MessageBusAdapter(module_name, port=cls._next_port)
             cls._instances[module_name] = adapter
+            cls._next_port += 1
         
         return cls._instances[module_name]
     

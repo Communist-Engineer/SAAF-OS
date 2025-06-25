@@ -6,6 +6,10 @@ It provides differentiable simulations for planning, counterfactual reasoning, a
 across physical and socio-technical domains.
 """
 
+import numpy as np
+
+import numpy as np
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
